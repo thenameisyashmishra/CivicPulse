@@ -1,0 +1,196 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+:root {
+  --radius: 8px;
+  --background: oklch(0.12 0.015 255);
+  --foreground: oklch(0.94 0.01 255);
+  --card: oklch(0.15 0.018 255);
+  --card-foreground: oklch(0.94 0.01 255);
+  --popover: oklch(0.15 0.018 255);
+  --popover-foreground: oklch(0.94 0.01 255);
+  --primary: oklch(0.84 0.15 195);
+  --primary-foreground: oklch(0.12 0.015 255);
+  --secondary: oklch(0.18 0.015 255);
+  --secondary-foreground: oklch(0.88 0.01 255);
+  --muted: oklch(0.20 0.015 255);
+  --muted-foreground: oklch(0.65 0.02 255);
+  --accent: oklch(0.20 0.02 255);
+  --accent-foreground: oklch(0.96 0.01 255);
+  --destructive: oklch(0.62 0.18 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.22 0.02 255);
+  --input: oklch(0.22 0.02 255);
+  --ring: oklch(0.84 0.15 195);
+  --chart-1: oklch(0.84 0.15 195);
+  --chart-2: oklch(0.80 0.14 85);
+  --chart-3: oklch(0.76 0.16 145);
+  --chart-4: oklch(0.62 0.18 25);
+  --chart-5: oklch(0.58 0.13 285);
+  --sidebar: oklch(0.13 0.015 255);
+  --sidebar-foreground: oklch(0.94 0.01 255);
+  --sidebar-primary: oklch(0.84 0.15 195);
+  --sidebar-primary-foreground: oklch(0.12 0.015 255);
+  --sidebar-accent: oklch(0.18 0.015 255);
+  --sidebar-accent-foreground: oklch(0.94 0.01 255);
+  --sidebar-border: oklch(0.22 0.02 255);
+  --sidebar-ring: oklch(0.84 0.15 195);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50 transition-colors duration-200;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    background-image: radial-gradient(circle at 50% 0%, oklch(0.18 0.05 195 / 0.15) 0%, transparent 60%);
+    background-attachment: fixed;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [type="button"]:not(:disabled),
+  [type="submit"]:not(:disabled),
+  [type="reset"]:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    @apply cursor-pointer;
+  }
+}
+
+@layer components {
+  .container {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .flex {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  @media (min-width: 640px) {
+    .container {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .container {
+      padding-left: 2rem;
+      padding-right: 2rem;
+      max-width: 1440px;
+    }
+  }
+
+  /* Glassmorphism & Cyber aesthetics */
+  .cyber-card {
+    background: rgba(21, 26, 34, 0.45);
+    backdrop-filter: blur(16px);
+    border: 1px solid oklch(0.22 0.02 255 / 0.8);
+    border-radius: var(--radius-md);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .cyber-card-hover:hover {
+    transform: translateY(-2px);
+    border-color: oklch(0.84 0.15 195 / 0.25);
+    box-shadow: 0 12px 24px -10px oklch(0.84 0.15 195 / 0.12);
+  }
+
+  .premium-glow {
+    box-shadow: 0 0 40px -15px oklch(0.84 0.15 195 / 0.3);
+  }
+
+  /* Status pulser keyframes */
+  @keyframes pulse-cyan {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0, 212, 255, 0.4); }
+    50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(0, 212, 255, 0); }
+  }
+
+  @keyframes pulse-amber {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255, 179, 71, 0.4); }
+    50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(255, 179, 71, 0); }
+  }
+
+  @keyframes pulse-crimson {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.4); }
+    50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(255, 71, 87, 0); }
+  }
+
+  @keyframes pulse-emerald {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.4); }
+    50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(0, 230, 118, 0); }
+  }
+
+  .status-pulse-cyan {
+    animation: pulse-cyan 2s ease-in-out infinite;
+  }
+
+  .status-pulse-amber {
+    animation: pulse-amber 2s ease-in-out infinite;
+  }
+
+  .status-pulse-crimson {
+    animation: pulse-crimson 2s ease-in-out infinite;
+  }
+
+  .status-pulse-emerald {
+    animation: pulse-emerald 2s ease-in-out infinite;
+  }
+}

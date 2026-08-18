@@ -1,0 +1,9 @@
+- `[x]` Install `@tanstack/react-query` in `frontend/package.json`
+- `[x]` Configure `QueryClientProvider` inside `App.tsx`
+- `[x]` Refactor data fetching inside pages using `useQuery` / `useMutation`
+- `[x]` Implement structured JSON logger in `backend/app/core/logging.py`
+- `[x]` Configure logger inside backend `main.py`
+- `[x]` Verify frontend build and compile clean
+- `[x]` Implement premium UI/UX design variables (Google Fonts, custom cyber-cards, glassmorphic layouts, background gradients, layout transitions)
+- `[x]` Add profile password modification (view/edit password toggles) and simulated MFA email verification password resets
+- `[x]` Debug all codebase files line by line and build comprehensive Pytest test suite (`backend/tests/test_api_suite.py`) with 19/19 tests passing + 51/51 smoke assertions passing

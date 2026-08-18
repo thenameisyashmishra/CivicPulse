@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - prod_backend_uploads:/app/uploads
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/civicpulse
+      - JWT_SECRET_KEY=production_secret_should_be_highly_secure_and_loaded_via_env
+      - ACCESS_TOKEN_EXPIRE_MINUTES=1440
+      - GEOFENCE_RADIUS_METERS=100.0
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=civicpulse
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  prod_backend_uploads:
+  postgres_data:
