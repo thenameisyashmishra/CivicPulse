@@ -1,18 +1,65 @@
 /*
  * Header — CivicPulse
- * Top bar with system status, alerts, and dynamic user dropdown (Log Out).
+ * Top bar with system status, real-time WebSocket alert center, command palette, and user dropdown.
  */
-import { Bell, Search, ChevronDown, LogOut } from "lucide-react";
-import { useState } from "react";
+import {
+  Bell,
+  Search,
+  ChevronDown,
+  LogOut,
+  Trash2,
+  CheckCheck,
+  Radio,
+  AlertTriangle,
+  AlertCircle,
+  CheckCircle2,
+  Info,
+  X,
+} from "lucide-react";
+import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { getSavedUser, clearToken } from "@/lib/data";
+import CommandMenu from "./CommandMenu";
+import {
+  useWebSocketNotifications,
+  formatRelativeTime,
+  NotificationItem,
+} from "@/hooks/useWebSocketNotifications";
 
 export default function Header() {
   const [showAlerts, setShowAlerts] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
   const [, navigate] = useLocation();
 
+  const alertsRef = useRef<HTMLDivElement>(null);
+  const userDropdownRef = useRef<HTMLDivElement>(null);
+
   const user = getSavedUser();
+  const {
+    notifications,
+    unreadCount,
+    isConnected,
+    connectionStatus,
+    markAsRead,
+    markAllAsRead,
+    clearNotifications,
+    removeNotification,
+  } = useWebSocketNotifications();
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (alertsRef.current && !alertsRef.current.contains(event.target as Node)) {
+        setShowAlerts(false);
+      }
+      if (userDropdownRef.current && !userDropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Helper to get initials from name
   const getInitials = (name: string) => {
@@ -29,68 +76,169 @@ export default function Header() {
     navigate("/login");
   };
 
+  const handleNotificationClick = (item: NotificationItem) => {
+    markAsRead(item.id);
+    if (item.projectId) {
+      navigate("/projects");
+      setShowAlerts(false);
+    } else if (item.evidenceId) {
+      navigate("/verifications");
+      setShowAlerts(false);
+    }
+  };
+
   return (
     <header className="h-14 bg-card/75 backdrop-blur-md border-b border-border flex items-center justify-between px-6 shrink-0 relative z-40">
-      {/* Search */}
+      {/* Search Trigger */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 bg-muted/30 border border-border/80 rounded-md px-3 py-1.5 w-72 focus-within:border-primary/50 transition-all duration-300">
-          <Search size={14} className="text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search projects, verifications..."
-            className="bg-transparent text-xs text-foreground placeholder:text-muted-foreground/60 outline-none w-full font-medium"
-            style={{ fontFamily: "var(--font-heading)" }}
-          />
-        </div>
+        <button
+          type="button"
+          onClick={() => setCommandOpen(true)}
+          className="flex items-center justify-between gap-3 bg-muted/20 hover:bg-muted/40 border border-border/80 hover:border-primary/50 rounded-md px-3 py-1.5 w-64 sm:w-80 transition-all duration-200 group text-left cursor-pointer shadow-xs focus:outline-hidden focus:ring-1 focus:ring-primary/40"
+          aria-label="Open global search and command palette"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Search size={14} className="text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+            <span
+              className="text-xs text-muted-foreground/75 group-hover:text-foreground transition-colors font-medium truncate"
+              style={{ fontFamily: "var(--font-heading)" }}
+            >
+              Search projects, verifications...
+            </span>
+          </div>
+          <kbd
+            className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground/80 bg-card/80 border border-border/80 rounded tracking-wider shrink-0 shadow-xs group-hover:border-primary/30 group-hover:text-primary transition-colors"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            <span className="text-[11px]">⌘</span>K
+          </kbd>
+        </button>
       </div>
+
+      {/* Global Command Palette */}
+      <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
 
       {/* Right side */}
       <div className="flex items-center gap-4">
-        {/* Alerts */}
-        <div className="relative">
+        {/* Live Notification Center */}
+        <div className="relative" ref={alertsRef}>
           <button
             onClick={() => setShowAlerts(!showAlerts)}
-            className="relative p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+            className="relative p-2 text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/30 cursor-pointer"
+            aria-label="Toggle notifications"
           >
-            <Bell size={16} />
-            <span className="absolute top-0 right-0 w-3.5 h-3.5 bg-destructive text-[8px] text-white flex items-center justify-center font-bold rounded-full border-2 border-card">
-              3
-            </span>
+            <Bell size={17} />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 min-w-4 h-4 px-1 bg-destructive text-[9px] text-white flex items-center justify-center font-bold rounded-full border-2 border-card shadow-sm animate-pulse">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
           </button>
 
           {showAlerts && (
-            <div className="absolute right-0 top-10 w-80 bg-card/95 backdrop-blur-lg border border-border rounded-lg shadow-xl z-50 overflow-hidden premium-glow">
-              <div className="px-4 py-3 border-b border-border bg-muted/20">
-                <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase" style={{ fontFamily: "var(--font-mono)" }}>
-                  ACTIVE ALERTS
-                </span>
+            <div className="absolute right-0 top-11 w-80 sm:w-96 bg-card/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl z-50 overflow-hidden premium-glow animate-in fade-in zoom-in-95 duration-150">
+              {/* Header */}
+              <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-[11px] font-bold tracking-widest text-foreground uppercase"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    MUNICIPAL ALERTS
+                  </span>
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-semibold tracking-wider border bg-background/60 shadow-xs">
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isConnected
+                          ? "bg-emerald-400 status-pulse-emerald"
+                          : connectionStatus === "connecting"
+                          ? "bg-amber-400 animate-ping"
+                          : "bg-rose-400"
+                      }`}
+                    />
+                    <span
+                      className={
+                        isConnected
+                          ? "text-emerald-400"
+                          : connectionStatus === "connecting"
+                          ? "text-amber-400"
+                          : "text-rose-400"
+                      }
+                      style={{ fontFamily: "var(--font-mono)" }}
+                    >
+                      {isConnected ? "LIVE" : connectionStatus === "connecting" ? "CONNECTING" : "OFFLINE"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllAsRead}
+                      className="text-[10px] text-muted-foreground hover:text-primary transition-colors px-2 py-1 rounded flex items-center gap-1 font-medium hover:bg-muted/50 cursor-pointer"
+                      title="Mark all as read"
+                    >
+                      <CheckCheck size={12} />
+                      <span>Read all</span>
+                    </button>
+                  )}
+                  {notifications.length > 0 && (
+                    <button
+                      onClick={clearNotifications}
+                      className="text-[10px] text-muted-foreground hover:text-rose-400 transition-colors px-2 py-1 rounded flex items-center gap-1 font-medium hover:bg-rose-500/10 cursor-pointer"
+                      title="Clear all alerts"
+                    >
+                      <Trash2 size={12} />
+                      <span>Clear All</span>
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="py-1">
-                <AlertItem
-                  severity="critical"
-                  text="PW-2024-002: Budget overrun detected (+16%)"
-                  time="2h ago"
-                />
-                <AlertItem
-                  severity="warning"
-                  text="PW-2024-004: Site inactive for 14+ days"
-                  time="5h ago"
-                />
-                <AlertItem
-                  severity="info"
-                  text="VR-005: Verification pending — awaiting upload"
-                  time="8h ago"
-                />
+
+              {/* Alerts List */}
+              <div className="max-h-84 overflow-y-auto divide-y divide-border/40">
+                {notifications.length === 0 ? (
+                  <div className="py-10 px-4 text-center">
+                    <div className="w-10 h-10 rounded-full bg-muted/40 border border-border/80 flex items-center justify-center mx-auto text-muted-foreground mb-3">
+                      <Bell size={18} className="opacity-40" />
+                    </div>
+                    <p className="text-xs font-semibold text-foreground">No Active Alerts</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      You are up to date with real-time municipal project feeds.
+                    </p>
+                  </div>
+                ) : (
+                  notifications.map((item) => (
+                    <AlertCard
+                      key={item.id}
+                      item={item}
+                      onClick={() => handleNotificationClick(item)}
+                      onDismiss={(e) => {
+                        e.stopPropagation();
+                        removeNotification(item.id);
+                      }}
+                    />
+                  ))
+                )}
+              </div>
+
+              {/* Footer status */}
+              <div className="px-4 py-2 bg-muted/20 border-t border-border/60 flex items-center justify-between text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1.5" style={{ fontFamily: "var(--font-mono)" }}>
+                  <Radio size={11} className={isConnected ? "text-emerald-400 animate-pulse" : "text-muted-foreground"} />
+                  {isConnected ? "WebSocket stream active" : "Reconnecting to stream..."}
+                </span>
+                <span>{notifications.length} alerts</span>
               </div>
             </div>
           )}
         </div>
 
         {/* User Dropdown */}
-        <div className="relative">
+        <div className="relative" ref={userDropdownRef}>
           <button
             onClick={() => setShowDropdown(!showDropdown)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-muted/20 border border-border/80 rounded-md hover:bg-muted/40 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-3 py-1.5 bg-muted/20 border border-border/80 rounded-md hover:bg-muted/40 transition-colors shadow-sm cursor-pointer"
           >
             <div
               className="w-6 h-6 bg-primary/20 border border-primary/40 rounded flex items-center justify-center text-[10px] font-bold text-primary"
@@ -129,7 +277,7 @@ export default function Header() {
               </div>
               <button
                 onClick={handleLogout}
-                className="w-full text-left px-4 py-2.5 text-xs text-rose-400 hover:bg-rose-500/10 flex items-center gap-2.5 transition-colors font-semibold tracking-wider"
+                className="w-full text-left px-4 py-2.5 text-xs text-rose-400 hover:bg-rose-500/10 flex items-center gap-2.5 transition-colors font-semibold tracking-wider cursor-pointer"
                 style={{ fontFamily: "var(--font-heading)" }}
               >
                 <LogOut size={13} />
@@ -143,20 +291,119 @@ export default function Header() {
   );
 }
 
-function AlertItem({ severity, text, time }: { severity: string; text: string; time: string }) {
-  const colors: Record<string, string> = {
-    critical: "bg-destructive",
-    warning: "bg-amber-500",
-    info: "bg-primary",
+function AlertCard({
+  item,
+  onClick,
+  onDismiss,
+}: {
+  item: NotificationItem;
+  onClick: () => void;
+  onDismiss: (e: React.MouseEvent) => void;
+}) {
+  const getSeverityConfig = (severity: string) => {
+    switch (severity) {
+      case "critical":
+      case "error":
+        return {
+          icon: <AlertCircle size={14} className="text-rose-400 shrink-0" />,
+          badgeClass: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+          dotClass: "bg-rose-500",
+          label: "CRITICAL",
+        };
+      case "warning":
+        return {
+          icon: <AlertTriangle size={14} className="text-amber-400 shrink-0" />,
+          badgeClass: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+          dotClass: "bg-amber-400",
+          label: "WARNING",
+        };
+      case "success":
+        return {
+          icon: <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />,
+          badgeClass: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+          dotClass: "bg-emerald-400",
+          label: "SUCCESS",
+        };
+      case "info":
+      default:
+        return {
+          icon: <Info size={14} className="text-primary shrink-0" />,
+          badgeClass: "bg-primary/10 text-primary border-primary/30",
+          dotClass: "bg-primary",
+          label: "INFO",
+        };
+    }
   };
+
+  const config = getSeverityConfig(item.severity);
+
   return (
-    <div className="px-4 py-2.5 hover:bg-accent flex items-start gap-3 border-b border-border/50 last:border-0">
-      <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${colors[severity]}`} />
-      <div className="flex-1">
-        <p className="text-xs text-foreground leading-snug">{text}</p>
-        <span className="text-[10px] text-muted-foreground mt-0.5 block" style={{ fontFamily: "var(--font-mono)" }}>
-          {time}
-        </span>
+    <div
+      onClick={onClick}
+      className={`px-4 py-3 hover:bg-accent/40 transition-colors group cursor-pointer relative flex items-start gap-3 ${
+        !item.read ? "bg-primary/5" : ""
+      }`}
+    >
+      <div className="mt-0.5">{config.icon}</div>
+
+      <div className="flex-1 min-w-0">
+        {/* Top line with Project Tag, Status Badge and Time */}
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {item.projectId && (
+              <span
+                className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-muted text-muted-foreground border border-border tracking-wider uppercase"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                {item.projectId}
+              </span>
+            )}
+            <span
+              className={`px-1.5 py-0.5 text-[9px] font-bold rounded border tracking-wider uppercase ${config.badgeClass}`}
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              {config.label}
+            </span>
+          </div>
+
+          <span
+            className="text-[10px] text-muted-foreground/75 shrink-0"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            {formatRelativeTime(item.timestamp)}
+          </span>
+        </div>
+
+        {/* Title */}
+        <p
+          className={`text-xs leading-snug font-semibold transition-colors ${
+            !item.read ? "text-foreground font-bold" : "text-foreground/90"
+          }`}
+          style={{ fontFamily: "var(--font-heading)" }}
+        >
+          {item.title}
+        </p>
+
+        {/* Message */}
+        {item.message && (
+          <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">
+            {item.message}
+          </p>
+        )}
+      </div>
+
+      {/* Dismiss button & Unread Indicator */}
+      <div className="flex flex-col items-end gap-1.5 shrink-0 ml-1">
+        <button
+          onClick={onDismiss}
+          className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-all cursor-pointer"
+          title="Dismiss notification"
+        >
+          <X size={12} />
+        </button>
+        {!item.read && (
+          <span className="w-1.5 h-1.5 rounded-full bg-primary status-pulse-primary" title="Unread" />
+        )}
       </div>
     </div>
   );

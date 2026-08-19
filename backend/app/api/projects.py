@@ -37,7 +37,7 @@ def list_projects(
 def create_project(
     payload: schemas.ProjectCreate,
     db: Session = Depends(get_db),
-    _current_user: models.User = Depends(require_roles(UserRole.admin, UserRole.engineer)),
+    _current_user: models.User = Depends(require_roles(UserRole.admin, UserRole.engineer, UserRole.pradhan)),
 ):
     if db.get(models.Project, payload.id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Project {payload.id} already exists")

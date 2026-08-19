@@ -110,7 +110,7 @@ function authHeader(): Record<string, string> {
 
 // ─── Base fetch wrapper ──────────────────────────────────────────────────────
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function fetchWithAuth<T = any>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
     headers: {
@@ -128,12 +128,25 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(detail || `HTTP ${res.status}`);
+    const rawText = await res.text();
+    let message = rawText;
+    try {
+      const parsed = JSON.parse(rawText);
+      if (typeof parsed.detail === "string") {
+        message = parsed.detail;
+      } else if (Array.isArray(parsed.detail)) {
+        message = parsed.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ");
+      }
+    } catch {
+      // Use rawText as fallback
+    }
+    throw new Error(message || `HTTP ${res.status}`);
   }
 
   return res.json() as Promise<T>;
 }
+
+const apiFetch = fetchWithAuth;
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
@@ -214,6 +227,33 @@ function mapProject(p: ApiProject): Project {
 export async function fetchProjects(): Promise<Project[]> {
   const raw = await apiFetch<ApiProject[]>("/api/projects");
   return raw.map(mapProject);
+}
+
+/** Create a new project */
+export async function createProject(
+  projectData: Partial<Project> & Record<string, any>
+): Promise<Project> {
+  const payload = {
+    id: projectData.id,
+    name: projectData.name,
+    type: projectData.type,
+    location: projectData.location,
+    contractor: projectData.contractor,
+    budget: Number(projectData.budget) || 0,
+    spent: Number(projectData.spent) || 0,
+    progress: Number(projectData.progress) || 0,
+    status: projectData.status || "active",
+    start_date: projectData.startDate || projectData.start_date || new Date().toISOString().split("T")[0],
+    end_date: projectData.endDate || projectData.end_date || new Date().toISOString().split("T")[0],
+    lat: Number(projectData.lat) || 0,
+    lng: Number(projectData.lng) || 0,
+  };
+
+  const raw = await fetchWithAuth<ApiProject>("/api/projects", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return mapProject(raw);
 }
 
 // ─── Verifications (Evidence) ─────────────────────────────────────────────────

@@ -27,6 +27,11 @@ class Base(DeclarativeBase):
 _sync_connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 
 if settings.database_url.startswith("sqlite"):
+    if settings.database_url.startswith("sqlite:///"):
+        _db_path = settings.database_url.replace("sqlite:///", "")
+        if _db_path and _db_path != ":memory:":
+            from pathlib import Path
+            Path(_db_path).parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(settings.database_url, connect_args=_sync_connect_args)
 else:
     engine = create_engine(

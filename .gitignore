@@ -10,9 +10,13 @@ env/
 .env.local
 .env.*.local
 
-# Databases
+# Databases & Backups
 *.db
+*.db-wal
+*.db-shm
 *.sqlite3
+backend/database_files/backups/*
+!backend/database_files/backups/.gitkeep
 
 # Node / Frontend
 node_modules/
@@ -41,6 +45,8 @@ Desktop.ini
 # Uploaded Assets
 backend/uploads/*
 !backend/uploads/.gitkeep
+uploads/*
+!uploads/.gitkeep
 
 # Testing
 .pytest_cache/

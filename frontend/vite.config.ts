@@ -18,11 +18,17 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
-    // Forward /api and /uploads to the FastAPI backend running on :8000
+    // Forward /api, /ws and /uploads to the FastAPI backend running on :8000
     proxy: {
       "/api": {
         target: "http://localhost:8000",
         changeOrigin: true,
+        ws: true,
+      },
+      "/ws": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        ws: true,
       },
       "/uploads": {
         target: "http://localhost:8000",

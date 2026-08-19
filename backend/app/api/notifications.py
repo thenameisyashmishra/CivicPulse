@@ -25,6 +25,7 @@ from app.db.models import UserRole
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ws", tags=["notifications"])
+direct_ws_router = APIRouter(prefix="/ws", tags=["notifications"])
 
 
 class SystemBroadcastRequest(BaseModel):
@@ -95,6 +96,7 @@ async def handle_websocket_session(
 
 
 @router.websocket("/notifications")
+@direct_ws_router.websocket("/notifications")
 async def websocket_notifications_query(
     websocket: WebSocket,
     user_id: Optional[int] = Query(None),
@@ -108,6 +110,7 @@ async def websocket_notifications_query(
 
 
 @router.websocket("/notifications/{user_id}")
+@direct_ws_router.websocket("/notifications/{user_id}")
 async def websocket_notifications_path(
     websocket: WebSocket,
     user_id: int,

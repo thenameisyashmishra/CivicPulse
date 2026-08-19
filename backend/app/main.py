@@ -107,4 +107,5 @@ app.include_router(reports.router)
 app.include_router(map.router)
 app.include_router(health_api.router)
 app.include_router(notifications.router)
+app.include_router(notifications.direct_ws_router)
 

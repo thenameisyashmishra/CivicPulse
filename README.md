@@ -1,5 +1,6 @@
 # CivicPulse 🏛
 
+[![CI/CD Pipeline](https://img.shields.io/github/actions/workflow/status/thenameisyashmishra/CivicPulse/ci.yml?branch=main&style=for-the-badge&logo=github-actions&logoColor=white&label=CI%2FCD)](https://github.com/thenameisyashmishra/CivicPulse/actions/workflows/ci.yml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com)
@@ -56,7 +57,7 @@ graph TD
 - **Database & High-Scale:** PostgreSQL 16 (16-Way Hash Partitioning on `votes`), Async SQLAlchemy 2.0, PgBouncer SCRAM-SHA-256, Dual Redis 7 (Cache + Streams), PostGIS Spatial Geofencing
 - **AI/ML & Vision:** Gemini Vision Multimodal AI, OpenCV, Laplacian Edge Blur Variance, GLCM Texture & Material Classification, Perceptual Hash (pHash)
 - **Security & Cryptography:** Deterministic SHA-256 Block Chaining, HMAC Digital Signatures, Binary Merkle Tree Verification
-- **Load Testing & DevOps:** Locust (10,000+ QPS), k6, Docker Compose Multi-Container Cluster
+- **Load Testing & DevOps:** GitHub Actions CI/CD, Locust (10,000+ QPS), k6, Docker Compose Multi-Container Cluster
 
 ---
 
@@ -106,10 +107,36 @@ npm run dev
 
 ---
 
+## 🔄 CI/CD Pipeline
+
+CivicPulse includes an automated GitHub Actions pipeline ([`.github/workflows/ci.yml`](file:///.github/workflows/ci.yml)) triggered on every push and pull request to `main`:
+
+```mermaid
+flowchart LR
+    Push[Git Push / PR] --> BackendJob[Backend CI: Python 3.11]
+    Push --> FrontendJob[Frontend CI: Node.js 20]
+    
+    subgraph BackendJob [Backend CI]
+        B1[Install deps & pytest] --> B2[Run pytest test_api_suite.py]
+    end
+    
+    subgraph FrontendJob [Frontend CI]
+        F1[npm ci] --> F2[npm run typecheck] --> F3[npm run build]
+    end
+```
+
+- **Backend CI (`backend-ci`):** Runs on `ubuntu-latest` with Python 3.11, caches pip dependencies, installs requirements, and executes the comprehensive pytest suite (`backend/tests/test_api_suite.py`) validating authentication, RBAC, geofencing, perceptual hash deduplication, and report exports.
+- **Frontend CI (`frontend-ci`):** Runs on `ubuntu-latest` with Node.js 20, caches npm dependencies, verifies strict TypeScript typing via `npm run typecheck`, and validates production bundle generation via `npm run build`.
+
+---
+
 ## 📁 Repository Structure
 
 ```
 civicpulse/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                 # GitHub Actions CI/CD workflow pipeline
 ├── backend/                       # FastAPI application service
 │   ├── app/
 │   │   ├── api/                   # Router endpoints (auth, projects, evidence, etc.)

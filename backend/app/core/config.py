@@ -19,9 +19,9 @@ class Settings(BaseSettings):
     app_env: str = "development"  # "development", "staging", "production"
     api_prefix: str = "/api"
 
-    # Database URLs
-    database_url: str = "sqlite:///./civicpulse.db"
-    async_database_url: str = "sqlite+aiosqlite:///./civicpulse.db"
+    # Database URLs (Default local database path stored in dedicated database_files/)
+    database_url: str = "sqlite:///./database_files/civicpulse.db"
+    async_database_url: str = "sqlite+aiosqlite:///./database_files/civicpulse.db"
     database_replica_url: str = ""
     database_migration_url: str = ""
 
