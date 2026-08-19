@@ -51,10 +51,12 @@ graph TD
 
 ## 🛠 Tech Stack
 
-- **Frontend:** React, Vite, TypeScript, TailwindCSS, Recharts, Wouter
-- **Backend:** FastAPI (Python 3.12), SQLAlchemy 2.0, SQLite (development) / PostgreSQL (production)
-- **AI/ML Engine:** OpenCV, ImageHash, Pillow (Image Processing & Validation)
-- **Deployment:** Docker, Docker Compose, Nginx
+- **Frontend & PWA:** React 18, Vite, TypeScript, TailwindCSS, Web Workers, IndexedDB Offline Store, Web App Manifest
+- **Backend & Real-Time:** FastAPI (Python 3.12+), WebSocket Multiplexing, OpenTelemetry APM Tracing
+- **Database & High-Scale:** PostgreSQL 16 (16-Way Hash Partitioning on `votes`), Async SQLAlchemy 2.0, PgBouncer SCRAM-SHA-256, Dual Redis 7 (Cache + Streams), PostGIS Spatial Geofencing
+- **AI/ML & Vision:** Gemini Vision Multimodal AI, OpenCV, Laplacian Edge Blur Variance, GLCM Texture & Material Classification, Perceptual Hash (pHash)
+- **Security & Cryptography:** Deterministic SHA-256 Block Chaining, HMAC Digital Signatures, Binary Merkle Tree Verification
+- **Load Testing & DevOps:** Locust (10,000+ QPS), k6, Docker Compose Multi-Container Cluster
 
 ---
 
