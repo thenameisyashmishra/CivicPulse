@@ -6,6 +6,7 @@ from app import schemas
 from app.db.database import get_db
 from app.core.deps import require_roles
 from app.db.models import UserRole
+from app.core.websockets import ws_manager
 
 router = APIRouter(prefix="/api/evidence", tags=["votes"])
 
@@ -32,18 +33,43 @@ def cast_vote(
         existing.comment = payload.comment
         db.commit()
         db.refresh(existing)
-        return existing
+        target_vote = existing
+    else:
+        vote = models.Vote(
+            evidence_id=evidence_id,
+            citizen_id=current_user.id,
+            choice=payload.choice,
+            comment=payload.comment,
+        )
+        db.add(vote)
+        db.commit()
+        db.refresh(vote)
+        target_vote = vote
 
-    vote = models.Vote(
-        evidence_id=evidence_id,
-        citizen_id=current_user.id,
-        choice=payload.choice,
-        comment=payload.comment,
+    # Compute updated tally and broadcast
+    db.refresh(evidence)
+    vote_summary: dict[str, int] = {}
+    for v in evidence.votes:
+        vote_summary[v.choice.value] = vote_summary.get(v.choice.value, 0) + 1
+
+    ws_manager.emit_event(
+        event_type="vote_tally_updated",
+        data={
+            "title": f"Citizen Vote: {evidence.project_id}",
+            "message": f"Citizen {current_user.name} voted '{payload.choice.value}' on evidence #{evidence.id}.",
+            "evidence_id": evidence.id,
+            "project_id": evidence.project_id,
+            "choice": payload.choice.value,
+            "comment": payload.comment,
+            "vote_summary": vote_summary,
+            "total_votes": sum(vote_summary.values()),
+        },
+        project_id=evidence.project_id,
+        user_id=evidence.uploaded_by_id,
+        broadcast_global=True,
     )
-    db.add(vote)
-    db.commit()
-    db.refresh(vote)
-    return vote
+
+    return target_vote
 
 
 @router.get("/{evidence_id}/votes", response_model=list[schemas.VoteOut])

@@ -1,15 +1,18 @@
 """
-Seeds the database with demo users (one per role) and the same six projects
-used in the CivicPulse frontend's mock data, so the API and the UI agree out
-of the box. Safe to re-run — skips anything that already exists.
+Seeds the database with demo users (one per role) and initial projects
+used in the CivicPulse frontend's mock data. Gated behind development mode.
 
 Usage:
-    python -m app.seed
+    python -m app.db.seed
 """
 
+import time
+from sqlalchemy.exc import OperationalError
+
+from app.core.config import get_settings
+from app.core.security import hash_password
 from app.db.database import Base, SessionLocal, engine
 from app.db.models import Project, ProjectStatus, User, UserRole
-from app.core.security import hash_password
 
 DEMO_USERS = [
     {"name": "Admin Officer", "email": "admin@civicpulse.gov.in", "password": "Admin@1234", "role": UserRole.admin, "aadhaar_verified": True, "aadhaar_last_4": "9901"},
@@ -58,10 +61,12 @@ DEMO_PROJECTS = [
 ]
 
 
-import time
-from sqlalchemy.exc import OperationalError
-
 def seed() -> None:
+    settings = get_settings()
+    if settings.app_env == "production":
+        print("ERROR: Seed script is disabled in production mode. Set APP_ENV=development to seed.")
+        return
+
     db = None
     retries = 5
     while retries > 0:
@@ -78,6 +83,9 @@ def seed() -> None:
             time.sleep(3)
 
     try:
+        if db is None:
+            return
+
         created_users = 0
         for u in DEMO_USERS:
             if not db.query(User).filter(User.email == u["email"]).first():
@@ -101,12 +109,9 @@ def seed() -> None:
 
         db.commit()
         print(f"Seed complete: {created_users} user(s), {created_projects} project(s) added.")
-        if created_users:
-            print("\nDemo login credentials:")
-            for u in DEMO_USERS:
-                print(f"  {u['role'].value:9s} {u['email']:30s} {u['password']}")
     finally:
-        db.close()
+        if db is not None:
+            db.close()
 
 
 if __name__ == "__main__":

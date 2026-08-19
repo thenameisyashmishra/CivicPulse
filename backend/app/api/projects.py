@@ -6,6 +6,7 @@ from app import schemas
 from app.db.database import get_db
 from app.core.deps import get_current_user, require_roles
 from app.db.models import EvidenceStatus, UserRole
+from app.core.websockets import ws_manager
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -45,6 +46,23 @@ def create_project(
     db.add(project)
     db.commit()
     db.refresh(project)
+
+    # Broadcast project creation
+    ws_manager.emit_event(
+        event_type="project_created",
+        data={
+            "title": f"New Project: {project.name}",
+            "message": f"New public work '{project.name}' ({project.id}) launched in {project.location}.",
+            "project_id": project.id,
+            "name": project.name,
+            "type": project.type,
+            "location": project.location,
+            "budget": project.budget,
+            "status": project.status.value,
+        },
+        broadcast_global=True,
+    )
+
     return _to_project_out(project)
 
 
@@ -76,6 +94,24 @@ def update_project(
 
     db.commit()
     db.refresh(project)
+
+    # Broadcast project update/status change
+    ws_manager.emit_event(
+        event_type="project_status_changed",
+        data={
+            "title": f"Project Updated: {project.name}",
+            "message": f"Project '{project.name}' ({project.id}) updated. Status: {project.status.value}, Progress: {project.progress}%.",
+            "project_id": project.id,
+            "name": project.name,
+            "status": project.status.value,
+            "progress": project.progress,
+            "budget": project.budget,
+            "spent": project.spent,
+        },
+        project_id=project.id,
+        broadcast_global=True,
+    )
+
     return _to_project_out(project)
 
 
@@ -88,5 +124,19 @@ def delete_project(
     project = db.get(models.Project, project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    
+    project_name = project.name
     db.delete(project)
     db.commit()
+
+    # Broadcast project deletion
+    ws_manager.emit_event(
+        event_type="project_deleted",
+        data={
+            "title": f"Project Deleted: {project_id}",
+            "message": f"Project '{project_name}' ({project_id}) was removed.",
+            "project_id": project_id,
+        },
+        project_id=project_id,
+        broadcast_global=True,
+    )

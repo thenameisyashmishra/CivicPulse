@@ -127,11 +127,45 @@ class ApprovalStepOut(BaseModel):
     remarks: str | None
     decided_at: datetime | None
     created_at: datetime
+    block_hash: str | None = None
+    prev_hash: str | None = None
+    signature: str | None = None
 
 
 class ApprovalDecisionIn(BaseModel):
     decision: ApprovalDecision = Field(description="approved | rejected | escalated")
     remarks: str | None = Field(default=None, max_length=500)
+
+
+class ChainStepVerification(BaseModel):
+    step_id: int
+    level: str
+    decision: str
+    reviewer_id: int | None = None
+    reviewer_name: str | None = None
+    remarks: str | None = None
+    decided_at: str | None = None
+    block_hash: str | None = None
+    prev_hash: str | None = None
+    signature: str | None = None
+    hash_valid: bool
+    signature_valid: bool
+    link_valid: bool
+
+
+class ChainVerificationResponse(BaseModel):
+    evidence_id: int
+    project_id: str
+    is_valid: bool
+    tamper_detected: bool
+    tamper_reason: str | None = None
+    merkle_root: str
+    total_steps: int
+    verified_steps: int
+    chain: list[ChainStepVerification]
+    genesis_hash: str
+    verified_at: datetime
+
 
 
 # ---------------------------------------------------------------------------

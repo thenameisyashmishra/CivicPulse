@@ -11,6 +11,7 @@ from app.db.database import get_db
 from app.core.deps import get_current_user
 from app.db.models import ApprovalLevel, EvidenceStatus
 from app.services.ai_pipeline import run_pipeline
+from app.core.websockets import ws_manager
 
 router = APIRouter(prefix="/api", tags=["evidence"])
 settings = get_settings()
@@ -76,6 +77,7 @@ def upload_evidence(
         project_lat=project.lat,
         project_lng=project.lng,
         existing_hashes=existing_hashes,
+        project_type=project.type,
     )
 
     # `ai_status` is the AI pipeline's raw conclusion. `status` is the overall
@@ -118,6 +120,30 @@ def upload_evidence(
 
     db.commit()
     db.refresh(evidence)
+
+    # Broadcast evidence submission to project room, reviewers, and global feed
+    ws_manager.emit_event(
+        event_type="evidence_uploaded",
+        data={
+            "title": f"New Evidence Uploaded: {project.name}",
+            "message": f"Evidence #{evidence.id} uploaded for {project.name} ({project_id}). AI status: {evidence.ai_status.value}.",
+            "evidence_id": evidence.id,
+            "project_id": project_id,
+            "project_name": project.name,
+            "uploaded_by_id": current_user.id,
+            "uploaded_by_name": current_user.name,
+            "status": evidence.status.value,
+            "ai_status": evidence.ai_status.value,
+            "quality_score": evidence.quality_score,
+            "completion_estimate": evidence.completion_estimate,
+            "caption": caption,
+            "image_path": public_path,
+        },
+        project_id=project_id,
+        user_id=current_user.id,
+        broadcast_global=True,
+    )
+
     return _to_evidence_out(evidence)
 
 

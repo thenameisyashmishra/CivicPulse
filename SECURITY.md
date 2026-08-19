@@ -18,7 +18,7 @@ If you discover a security vulnerability within CivicPulse, please report it pri
 Please **do not** open a public GitHub issue for security disclosures.
 
 ### Reporting Procedure:
-1. Send an email to **security@civicpulse.gov.in** with the subject: `Vulnerability Report - [Brief Title]`.
+1. Send an email to **yash07mishra05@gmail.com** with the subject: `Vulnerability Report - [Brief Title]`.
 2. Include a detailed description of the vulnerability, including:
    - Affected endpoints or components.
    - Step-by-step instructions to reproduce the issue (PoC).

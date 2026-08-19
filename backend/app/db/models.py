@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM models.
+SQLAlchemy ORM models with Enterprise Production-Grade High-Scale Indexing.
 
 Schema overview
 ----------------
@@ -23,11 +23,14 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     JSON,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -71,15 +74,18 @@ class ApprovalDecision(str, enum.Enum):
 
 
 class EvidenceStatus(str, enum.Enum):
-    # Mirrors the frontend's VerificationStatus so the two systems line up.
-    pending = "pending"     # uploaded, AI analysis not yet run / awaiting review
-    review = "review"       # AI flagged something ambiguous, needs human eyes
-    verified = "verified"   # passed AI checks + human approval chain
-    failed = "failed"       # AI or a human reviewer rejected it
+    pending = "pending"
+    review = "review"
+    verified = "verified"
+    failed = "failed"
 
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("ix_users_role_active", "role", "is_active"),
+        Index("ix_users_created_at", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
@@ -89,7 +95,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     aadhaar_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     aadhaar_last_4: Mapped[str | None] = mapped_column(String(4), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default=func.now())
 
     evidence_uploads: Mapped[list["Evidence"]] = relationship(back_populates="uploaded_by", foreign_keys="Evidence.uploaded_by_id")
     votes: Mapped[list["Vote"]] = relationship(back_populates="citizen")
@@ -97,29 +103,43 @@ class User(Base):
 
 class Project(Base):
     __tablename__ = "projects"
+    __table_args__ = (
+        Index("ix_projects_status_created", "status", "created_at"),
+        Index("ix_projects_type_status", "type", "status"),
+        Index("ix_projects_lat_lng", "lat", "lng"),
+    )
 
-    # Human-readable IDs like "PW-2024-001", matching the frontend's format.
+    # Human-readable IDs like "PW-2024-001"
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     type: Mapped[str] = mapped_column(String(100))
     location: Mapped[str] = mapped_column(String(200))
     contractor: Mapped[str] = mapped_column(String(200))
-    budget: Mapped[float] = mapped_column(Float)
-    spent: Mapped[float] = mapped_column(Float, default=0)
+    budget: Mapped[float] = mapped_column(Numeric(15, 2))
+    spent: Mapped[float] = mapped_column(Numeric(15, 2), default=0)
     progress: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[ProjectStatus] = mapped_column(Enum(ProjectStatus), default=ProjectStatus.active)
     start_date: Mapped[str] = mapped_column(String(20))
     end_date: Mapped[str] = mapped_column(String(20))
     lat: Mapped[float] = mapped_column(Float)
     lng: Mapped[float] = mapped_column(Float)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, server_default=func.now()
+    )
 
     evidence: Mapped[list["Evidence"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
 class Evidence(Base):
     __tablename__ = "evidence"
+    __table_args__ = (
+        Index("ix_evidence_project_status", "project_id", "status"),
+        Index("ix_evidence_uploaded_by", "uploaded_by_id"),
+        Index("ix_evidence_phash", "phash"),
+        Index("ix_evidence_gps", "gps_lat", "gps_lng"),
+        Index("ix_evidence_status_created", "status", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
@@ -148,10 +168,10 @@ class Evidence(Base):
     ai_findings: Mapped[list] = mapped_column(JSON, default=list)
     ai_analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # --- Overall workflow status (driven by AI + approval chain) ---
+    # --- Overall workflow status ---
     status: Mapped[EvidenceStatus] = mapped_column(Enum(EvidenceStatus), default=EvidenceStatus.pending)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="evidence")
     uploaded_by: Mapped["User"] = relationship(back_populates="evidence_uploads", foreign_keys=[uploaded_by_id])
@@ -163,14 +183,18 @@ class Evidence(Base):
 
 class Vote(Base):
     __tablename__ = "votes"
-    __table_args__ = (UniqueConstraint("evidence_id", "citizen_id", name="uq_one_vote_per_citizen"),)
+    __table_args__ = (
+        UniqueConstraint("evidence_id", "citizen_id", name="uq_one_vote_per_citizen"),
+        Index("ix_votes_evidence_choice", "evidence_id", "choice"),
+        Index("ix_votes_citizen_id", "citizen_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     evidence_id: Mapped[int] = mapped_column(ForeignKey("evidence.id"))
     citizen_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     choice: Mapped[VoteChoice] = mapped_column(Enum(VoteChoice))
     comment: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default=func.now())
 
     evidence: Mapped["Evidence"] = relationship(back_populates="votes")
     citizen: Mapped["User"] = relationship(back_populates="votes")
@@ -180,6 +204,12 @@ class ApprovalStep(Base):
     """One row per stage in the Pradhan -> Engineer -> Admin chain."""
 
     __tablename__ = "approval_steps"
+    __table_args__ = (
+        Index("ix_approval_evidence_level", "evidence_id", "level"),
+        Index("ix_approval_reviewer_decision", "reviewer_id", "decision"),
+        Index("ix_approval_created_at", "created_at"),
+        Index("ix_approval_block_hash", "block_hash"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     evidence_id: Mapped[int] = mapped_column(ForeignKey("evidence.id"))
@@ -188,7 +218,13 @@ class ApprovalStep(Base):
     reviewer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     remarks: Mapped[str | None] = mapped_column(String(500), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default=func.now())
+
+    # --- Cryptographic Audit Ledger Fields ---
+    block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    signature: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     evidence: Mapped["Evidence"] = relationship(back_populates="approval_steps")
     reviewer: Mapped["User | None"] = relationship(foreign_keys=[reviewer_id])
+
