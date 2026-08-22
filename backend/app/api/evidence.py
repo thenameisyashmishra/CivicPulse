@@ -1,3 +1,4 @@
+import html
 import uuid
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from app.db.database import get_db
 from app.core.deps import get_current_user
 from app.db.models import ApprovalLevel, EvidenceStatus
 from app.services.ai_pipeline import run_pipeline
+from app.services.storage import get_storage
 from app.core.websockets import ws_manager
 
 router = APIRouter(prefix="/api", tags=["evidence"])
@@ -18,6 +20,15 @@ settings = get_settings()
 
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15 MB
+DANGEROUS_PAYLOAD_SIGNATURES = (b"MZ", b"\x7fELF", b"<?php", b"<script", b"#!/bin/")
+
+
+def _is_safe_image_binary(contents: bytes) -> bool:
+    """Inspect binary header to prevent script/executable injection."""
+    for sig in DANGEROUS_PAYLOAD_SIGNATURES:
+        if contents.startswith(sig) or sig in contents[:64]:
+            return False
+    return True
 
 
 def _to_evidence_out(evidence: models.Evidence) -> schemas.EvidenceOut:
@@ -57,14 +68,25 @@ def upload_evidence(
     if len(contents) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds 15 MB limit")
 
-    # --- Save the file ---
-    project_dir = settings.upload_path / project_id
-    project_dir.mkdir(parents=True, exist_ok=True)
+    if not _is_safe_image_binary(contents):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File contains invalid or disallowed executable binary signatures.",
+        )
+
+    safe_caption = html.escape(caption.strip()) if caption else None
+
+    # --- Save the file via Pluggable Storage Backend ---
     ext = Path(file.filename or "photo.jpg").suffix or ".jpg"
-    stored_name = f"{uuid.uuid4().hex}{ext}"
-    disk_path = project_dir / stored_name
-    disk_path.write_bytes(contents)
-    public_path = f"/uploads/{project_id}/{stored_name}"
+    relative_path = f"{project_id}/{uuid.uuid4().hex}{ext}"
+    storage = get_storage()
+    public_path = storage.upload(relative_path, contents, content_type=file.content_type or "image/jpeg")
+
+    # Local disk path for local AI analysis pipeline
+    disk_path = settings.upload_path / relative_path
+    if not disk_path.exists():
+        disk_path.parent.mkdir(parents=True, exist_ok=True)
+        disk_path.write_bytes(contents)
 
     # --- Prior hashes for this project, for duplicate detection ---
     existing_hashes = [

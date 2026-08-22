@@ -17,6 +17,8 @@ from app.services import dedupe, vision
 from app.services.exif import extract_exif
 from app.services.geo import haversine_distance_m
 from app.services.vision_ai import analyze_vision_deep
+from app.services.defect_detector import detect_surface_defects
+from app.services.xai import explain_verification_result
 
 settings = get_settings()
 

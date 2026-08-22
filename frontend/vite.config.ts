@@ -11,27 +11,62 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "src"),
     },
   },
+  optimizeDeps: {
+    include: [
+      "react",
+      "react-dom",
+      "wouter",
+      "@tanstack/react-query",
+      "lucide-react",
+      "clsx",
+      "tailwind-merge",
+      "sonner",
+    ],
+  },
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    cssCodeSplit: true,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            if (
+              id.includes("lucide-react") ||
+              id.includes("sonner") ||
+              id.includes("clsx") ||
+              id.includes("tailwind-merge")
+            ) {
+              return "ui";
+            }
+            return "vendor";
+          }
+        },
+      },
+    },
   },
   server: {
     port: 3000,
     host: true,
-    // Forward /api, /ws and /uploads to the FastAPI backend running on :8000
+    // Forward /api, /ws, /uploads, /metrics directly to IPv4 127.0.0.1:8000
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
         ws: true,
       },
       "/ws": {
-        target: "http://localhost:8000",
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
         ws: true,
       },
       "/uploads": {
-        target: "http://localhost:8000",
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+      },
+      "/metrics": {
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
       },
     },

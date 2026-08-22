@@ -1,0 +1,76 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: CivicPulse Enterprise Production Alerts
+    folder: CivicPulse
+    interval: 1m
+    rules:
+      - uid: cp_error_rate_critical
+        title: "HTTP Error Rate > 1.0%"
+        condition: B
+        data:
+          - refId: A
+            queryType: prometheus
+            relativeTimeRange:
+              from: 300
+              to: 0
+            expr: sum(rate(civicpulse_http_requests_total{status_code=~"5.."}[5m])) / sum(rate(civicpulse_http_requests_total[5m])) > 0.01
+          - refId: B
+            type: classic_conditions
+            evaluator:
+              type: gt
+              params: [0]
+        for: 2m
+        labels:
+          severity: critical
+          service: civicpulse-backend
+        annotations:
+          summary: "Elevated 5xx error rates detected across CivicPulse API gateways."
+          description: "Global error rate has exceeded 1.0% over a 5-minute rolling window."
+
+      - uid: cp_p95_latency_high
+        title: "P95 Request Latency > 500ms"
+        condition: B
+        data:
+          - refId: A
+            queryType: prometheus
+            relativeTimeRange:
+              from: 300
+              to: 0
+            expr: histogram_quantile(0.95, sum(rate(civicpulse_request_duration_seconds_bucket[5m])) by (le)) > 0.5
+          - refId: B
+            type: classic_conditions
+            evaluator:
+              type: gt
+              params: [0]
+        for: 3m
+        labels:
+          severity: warning
+          service: civicpulse-backend
+        annotations:
+          summary: "P95 API request latency exceeds 500ms SLA target."
+          description: "Inspect database query bottlenecks or AI pipeline compute queue."
+
+      - uid: cp_db_pool_saturated
+        title: "Database Connection Pool Utilization > 80%"
+        condition: B
+        data:
+          - refId: A
+            queryType: prometheus
+            relativeTimeRange:
+              from: 120
+              to: 0
+            expr: civicpulse_db_pool_utilization_ratio > 0.8
+          - refId: B
+            type: classic_conditions
+            evaluator:
+              type: gt
+              params: [0]
+        for: 2m
+        labels:
+          severity: warning
+          service: civicpulse-database
+        annotations:
+          summary: "PostgreSQL / PgBouncer connection pool nearing saturation."
+          description: "Check for unindexed slow queries or connection leaks in asynchronous handlers."

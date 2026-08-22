@@ -4,16 +4,19 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
+
 from app.core.ratelimit import RateLimitMiddleware
 from app.core.db_middleware import DBPerformanceMiddleware
 from app.core.telemetry import setup_telemetry
 from app.core.websockets import ws_manager
+from app.core import metrics
 
 from app.core.config import get_settings
 from app.core.logging import setup_structured_logging
 from app.db.database import Base, engine
-from app.api import auth, dashboard, evidence, map, projects, reports, reviews, votes, notifications
+from app.api import auth, dashboard, evidence, map, projects, reports, reviews, votes, notifications, privacy, opendata
 from app.api import health as health_api
 
 setup_structured_logging()
@@ -23,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Register running event loop for safe multi-threaded WebSocket broadcasts
+    # Register running event loop for safe multi-threaded WebSocket broadcasts & Redis pub/sub
     try:
         ws_manager.set_event_loop(asyncio.get_running_loop())
     except Exception:
@@ -75,14 +78,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     description=(
-        "REST API for the AI-Based Public Works Monitoring & Verification System. "
+        "Enterprise REST API for the AI-Based Public Works Monitoring & Verification System. "
         "Handles projects, geotagged evidence uploads with AI verification "
-        "(GPS/EXIF check, duplicate detection, quality/completion heuristics), "
+        "(GPS/EXIF check, duplicate detection, quality/completion heuristics, YOLOv11 defect detection), "
         "citizen voting, and the Pradhan -> Engineer -> Admin approval chain."
     ),
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# GZip Response Compression for high-throughput responses > 500 bytes
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.add_middleware(
     CORSMiddleware,
@@ -95,8 +101,30 @@ app.add_middleware(
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(DBPerformanceMiddleware)
 
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' data: https://fonts.gstatic.com; "
+        "img-src 'self' data: blob: https:; "
+        "connect-src 'self' ws: wss: http: https:; "
+        "frame-ancestors 'none';"
+    )
+    response.headers["Permissions-Policy"] = "geolocation=(self), camera=(self), microphone=()"
+    if settings.app_env == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
 app.mount("/uploads", StaticFiles(directory=str(settings.upload_path)), name="uploads")
 
+# Application & Domain Routers
 app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(evidence.router)
@@ -109,3 +137,7 @@ app.include_router(health_api.router)
 app.include_router(notifications.router)
 app.include_router(notifications.direct_ws_router)
 
+# Enterprise Observability & GovTech Compliance Routers
+app.include_router(metrics.router)
+app.include_router(privacy.router)
+app.include_router(opendata.router)

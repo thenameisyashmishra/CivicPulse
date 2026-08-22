@@ -3,7 +3,7 @@ OpenTelemetry APM & Distributed Tracing Instrumentation for CivicPulse.
 
 Features:
 - Microsecond query and HTTP request distributed tracing.
-- Fast, non-blocking telemetry exporters.
+- Fast, non-blocking telemetry exporters (OTLP gRPC in production, Console in dev).
 - Graceful degradation when OpenTelemetry packages are not installed.
 """
 
@@ -30,9 +30,27 @@ def setup_telemetry(app: Any = None) -> bool:
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 
-        resource = Resource.create({"service.name": settings.app_name, "service.env": settings.app_env})
+        resource = Resource.create({
+            "service.name": settings.app_name,
+            "service.env": settings.app_env,
+            "service.version": "1.0.0",
+        })
         provider = TracerProvider(resource=resource)
-        processor = BatchSpanProcessor(ConsoleSpanExporter())
+
+        # In production with OTLP endpoint configured, use OTLP gRPC/HTTP exporter
+        exporter = None
+        if settings.opentelemetry_endpoint and settings.app_env == "production":
+            try:
+                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+                exporter = OTLPSpanExporter(endpoint=settings.opentelemetry_endpoint)
+                logger.info("Configured OTLP gRPC span exporter to %s", settings.opentelemetry_endpoint)
+            except Exception as exp_err:
+                logger.warning("Could not instantiate OTLPSpanExporter: %s. Using console fallback.", exp_err)
+
+        if exporter is None:
+            exporter = ConsoleSpanExporter()
+
+        processor = BatchSpanProcessor(exporter)
         provider.add_span_processor(processor)
         trace.set_tracer_provider(provider)
 
@@ -40,6 +58,7 @@ def setup_telemetry(app: Any = None) -> bool:
             FastAPIInstrumentor.instrument_app(app)
 
         from app.db.database import engine
+
         SQLAlchemyInstrumentor().instrument(engine=engine)
         RedisInstrumentor().instrument()
 

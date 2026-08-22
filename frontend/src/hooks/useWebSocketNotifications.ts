@@ -111,6 +111,12 @@ class NotificationStore {
   private candidateIndex = 0;
   private activeSubscriptions = new Set<string>();
   private hydratedFromHistory = false;
+  private cachedSnapshot: {
+    notifications: NotificationItem[];
+    connectionStatus: ConnectionStatus;
+    isConnected: boolean;
+    unreadCount: number;
+  } | null = null;
 
   constructor() {
     // Load persisted notifications if available, otherwise use seed alerts
@@ -134,6 +140,7 @@ class NotificationStore {
   }
 
   private notify() {
+    this.cachedSnapshot = null;
     this.persist();
     for (const listener of this.listeners) {
       listener();
@@ -149,12 +156,15 @@ class NotificationStore {
   }
 
   public getSnapshot = () => {
-    return {
-      notifications: this.notifications,
-      connectionStatus: this.connectionStatus,
-      isConnected: this.connectionStatus === "connected",
-      unreadCount: this.notifications.filter((n) => !n.read).length,
-    };
+    if (!this.cachedSnapshot) {
+      this.cachedSnapshot = {
+        notifications: this.notifications,
+        connectionStatus: this.connectionStatus,
+        isConnected: this.connectionStatus === "connected",
+        unreadCount: this.notifications.filter((n) => !n.read).length,
+      };
+    }
+    return this.cachedSnapshot;
   };
 
   public markAsRead(id: string) {
