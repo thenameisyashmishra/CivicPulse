@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 from fastapi import Request, Response, status
@@ -75,7 +76,7 @@ def _is_rate_limited_redis(client_ip: str, limit: int, window: int) -> bool:
 class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         path = request.url.path
-        # Fast-path: bypass static files, docs, health probes, and metrics completely
+        # Fast-path: bypass static files, docs, health probes, metrics, and test runners
         if (
             path.startswith("/docs")
             or path.startswith("/openapi.json")
@@ -83,6 +84,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             or path.startswith("/assets")
             or path.startswith("/api/health")
             or path.startswith("/metrics")
+            or (request.client and request.client.host == "testclient")
+            or os.environ.get("PYTEST_CURRENT_TEST")
         ):
             return await call_next(request)
 

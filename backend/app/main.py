@@ -16,7 +16,7 @@ from app.core import metrics
 from app.core.config import get_settings
 from app.core.logging import setup_structured_logging
 from app.db.database import Base, engine
-from app.api import auth, dashboard, evidence, map, projects, reports, reviews, votes, notifications, privacy, opendata
+from app.api import auth, dashboard, evidence, map, projects, reports, reviews, votes, notifications, privacy, opendata, accountability, transparency, lifecycle, engineering, fraud_intel, engagement, interop, security_compliance, tenants, analytics_policy, sustainability, model_governance
 from app.api import health as health_api
 
 setup_structured_logging()
@@ -141,3 +141,16 @@ app.include_router(notifications.direct_ws_router)
 app.include_router(metrics.router)
 app.include_router(privacy.router)
 app.include_router(opendata.router)
+app.include_router(accountability.router)
+app.include_router(transparency.router)
+app.include_router(lifecycle.router)
+app.include_router(engineering.router)
+app.include_router(fraud_intel.router)
+app.include_router(engagement.router)
+app.include_router(interop.router)
+app.include_router(security_compliance.router)
+app.include_router(tenants.router)
+app.include_router(analytics_policy.router)
+app.include_router(sustainability.router)
+app.include_router(model_governance.router)
+

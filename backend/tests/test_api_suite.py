@@ -7,6 +7,7 @@ citizen voting, multi-tier review chains, dashboard stats, and report exports.
 
 import pytest
 from fastapi.testclient import TestClient
+import uuid
 from PIL import Image
 import io
 import tempfile
@@ -19,14 +20,6 @@ from app.db.seed import seed
 from app.core.security import hash_password
 
 client = TestClient(app)
-
-
-@pytest.fixture(autouse=True)
-def reset_database():
-    """Ensure database has fresh seeded data before each test run."""
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    seed()
 
 
 def get_token(email: str = "admin@civicpulse.gov.in", password: str = "Admin@1234") -> str:
@@ -60,9 +53,10 @@ class TestAuthentication:
         assert response.status_code == 401
 
     def test_register_user(self):
+        rand_email = f"newuser_{uuid.uuid4().hex[:6]}@civicpulse.gov.in"
         payload = {
             "name": "New Test User",
-            "email": "newuser@civicpulse.gov.in",
+            "email": rand_email,
             "password": "Password@123",
             "role": "citizen"
         }
@@ -96,16 +90,17 @@ class TestAuthentication:
 
     def test_change_password(self):
         # Register a dedicated user for password change testing
+        rand_email = f"pwd_user_{uuid.uuid4().hex[:6]}@civicpulse.gov.in"
         reg_payload = {
             "name": "Pwd Change User",
-            "email": "pwd_user@civicpulse.gov.in",
+            "email": rand_email,
             "password": "InitialPassword@123",
             "role": "citizen"
         }
         reg_res = client.post("/api/auth/register", json=reg_payload)
         assert reg_res.status_code == 201
 
-        headers = get_auth_headers("pwd_user@civicpulse.gov.in", "InitialPassword@123")
+        headers = get_auth_headers(rand_email, "InitialPassword@123")
         
         # Wrong current password
         bad_change = {"current_password": "WrongPassword", "new_password": "NewSecretPassword@123"}
@@ -118,7 +113,7 @@ class TestAuthentication:
         assert res_good.status_code == 200
 
         # Verify login with new password
-        login_res = client.post("/api/auth/login", data={"username": "pwd_user@civicpulse.gov.in", "password": "NewSecretPassword@123"})
+        login_res = client.post("/api/auth/login", data={"username": rand_email, "password": "NewSecretPassword@123"})
         assert login_res.status_code == 200
 
     def test_password_reset_mfa_flow(self):
@@ -140,6 +135,16 @@ class TestAuthentication:
         login_res = client.post("/api/auth/login", data={"username": "engineer@civicpulse.gov.in", "password": "ResetPassword@123"})
         assert login_res.status_code == 200
 
+        # 5. Restore engineer password so subsequent tests run cleanly
+        from app.db.database import SessionLocal
+        from app.db.models import User
+        from app.core.security import hash_password
+        with SessionLocal() as db:
+            eng = db.query(User).filter(User.email == "engineer@civicpulse.gov.in").first()
+            if eng:
+                eng.hashed_password = hash_password("Engineer@1234")
+                db.commit()
+
 
 class TestProjects:
     def test_list_projects(self):
@@ -156,8 +161,9 @@ class TestProjects:
 
     def test_create_project_role_authorization(self):
         cit_headers = get_auth_headers("citizen@civicpulse.gov.in", "Citizen@1234")
+        rand_proj_id = f"PW-TEST-{uuid.uuid4().hex[:6].upper()}"
         new_project = {
-            "id": "PW-2024-888",
+            "id": rand_proj_id,
             "name": "Test Citizen Road",
             "type": "Road Infrastructure",
             "location": "Test Village",
@@ -178,7 +184,7 @@ class TestProjects:
         admin_headers = get_auth_headers("admin@civicpulse.gov.in", "Admin@1234")
         res_admin = client.post("/api/projects", json=new_project, headers=admin_headers)
         assert res_admin.status_code == 201
-        assert res_admin.json()["id"] == "PW-2024-888"
+        assert res_admin.json()["id"] == rand_proj_id
 
     def test_update_project(self):
         headers = get_auth_headers("engineer@civicpulse.gov.in", "Engineer@1234")
@@ -239,11 +245,30 @@ class TestCitizenVoting:
 
 class TestReviewsAndApprovalChain:
     def test_multi_level_approval_chain(self):
+        # Create dedicated project for chain testing
+        chain_proj_id = f"PW-CHN-{uuid.uuid4().hex[:6].upper()}"
+        adm_headers = get_auth_headers("admin@civicpulse.gov.in", "Admin@1234")
+        client.post("/api/projects", json={
+            "id": chain_proj_id,
+            "name": "Chain Test Road",
+            "type": "Road Infrastructure",
+            "location": "Chain Village",
+            "contractor": "Chain Corp",
+            "budget": 500000.0,
+            "spent": 0.0,
+            "progress": 0,
+            "status": "active",
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "lat": 28.5,
+            "lng": 77.2
+        }, headers=adm_headers)
+
         # 1. Citizen uploads photo
         cit_headers = get_auth_headers("citizen@civicpulse.gov.in", "Citizen@1234")
         buf = io.BytesIO()
         Image.new("RGB", (120, 120), color="green").save(buf, format="JPEG")
-        up_res = client.post("/api/projects/PW-2024-001/evidence", files={"file": ("green_site.jpg", buf.getvalue(), "image/jpeg")}, headers=cit_headers)
+        up_res = client.post(f"/api/projects/{chain_proj_id}/evidence", files={"file": ("green_site.jpg", buf.getvalue(), "image/jpeg")}, headers=cit_headers)
         assert up_res.status_code == 201
         ev_id = up_res.json()["id"]
 

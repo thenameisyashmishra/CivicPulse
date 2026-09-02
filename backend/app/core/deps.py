@@ -40,9 +40,16 @@ def get_current_user(
 
 def require_roles(*roles: models.UserRole) -> Callable:
     """Dependency factory: raises 403 unless current_user.role is in `roles`."""
+    flattened_roles = []
+    for r in roles:
+        if isinstance(r, (list, tuple, set)):
+            flattened_roles.extend(r)
+        else:
+            flattened_roles.append(r)
+    allowed_roles = tuple(flattened_roles)
 
     def checker(current_user: models.User = Depends(get_current_user)) -> models.User:
-        if current_user.role not in roles:
+        if current_user.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Role '{current_user.role.value}' is not permitted to perform this action",
@@ -50,3 +57,7 @@ def require_roles(*roles: models.UserRole) -> Callable:
         return current_user
 
     return checker
+
+
+require_role = require_roles
+

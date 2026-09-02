@@ -16,6 +16,14 @@ const SiteMap = lazy(() => import("./pages/SiteMap"));
 const Reports = lazy(() => import("./pages/Reports"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Login = lazy(() => import("./pages/Login"));
+const AccountabilityHub = lazy(() => import("./pages/AccountabilityHub"));
+const TransparencyPortal = lazy(() => import("./pages/TransparencyPortal"));
+const LifecycleHub = lazy(() => import("./pages/LifecycleHub"));
+const EngineeringVisionHub = lazy(() => import("./pages/EngineeringVisionHub"));
+const FraudIntelCenter = lazy(() => import("./pages/FraudIntelCenter"));
+const CitizenEngagementPortal = lazy(() => import("./pages/CitizenEngagementPortal"));
+const GovSecurityCenter = lazy(() => import("./pages/GovSecurityCenter"));
+const PolicyGovernanceHub = lazy(() => import("./pages/PolicyGovernanceHub"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function PageLoader() {
@@ -49,6 +57,14 @@ function Router() {
         <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
         <Route path="/projects" component={() => <ProtectedRoute component={Projects} />} />
         <Route path="/verifications" component={() => <ProtectedRoute component={Verifications} />} />
+        <Route path="/accountability" component={() => <ProtectedRoute component={AccountabilityHub} />} />
+        <Route path="/transparency" component={TransparencyPortal} />
+        <Route path="/lifecycle" component={() => <ProtectedRoute component={LifecycleHub} />} />
+        <Route path="/engineering" component={() => <ProtectedRoute component={EngineeringVisionHub} />} />
+        <Route path="/fraud-intel" component={() => <ProtectedRoute component={FraudIntelCenter} />} />
+        <Route path="/engagement" component={CitizenEngagementPortal} />
+        <Route path="/gov-security" component={() => <ProtectedRoute component={GovSecurityCenter} />} />
+        <Route path="/policy-governance" component={() => <ProtectedRoute component={PolicyGovernanceHub} />} />
         <Route path="/map" component={() => <ProtectedRoute component={SiteMap} />} />
         <Route path="/reports" component={() => <ProtectedRoute component={Reports} />} />
         <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />

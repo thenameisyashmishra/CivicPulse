@@ -139,7 +139,7 @@ export async function syncOfflineEvidenceQueue(
 // Auto-register online sync listener in browser environments
 if (typeof window !== "undefined") {
   window.addEventListener("online", () => {
-    const savedToken = localStorage.getItem("civicpulse_token") || localStorage.getItem("token");
+    const savedToken = localStorage.getItem("cp_token") || localStorage.getItem("civicpulse_token") || localStorage.getItem("token");
     if (savedToken) {
       syncOfflineEvidenceQueue(savedToken).then(({ synced }) => {
         if (synced > 0) {
