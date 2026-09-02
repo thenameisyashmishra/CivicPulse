@@ -3,13 +3,8 @@ import pytest
 from app.db.database import Base, engine
 from app.db.seed import seed
 
-# Suppress StarletteDeprecationWarning regarding httpx / httpx2 in testclient
-warnings.filterwarnings("ignore", message=".*Using `httpx` with `starlette.testclient` is deprecated.*")
-try:
-    from starlette.exceptions import StarletteDeprecationWarning
-    warnings.filterwarnings("ignore", category=StarletteDeprecationWarning)
-except ImportError:
-    pass
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 @pytest.fixture(scope="session", autouse=True)

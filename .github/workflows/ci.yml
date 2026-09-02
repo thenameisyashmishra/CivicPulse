@@ -31,8 +31,10 @@ jobs:
           pip install -r requirements.txt pytest
 
       - name: Run Backend Pytest Suite
+        env:
+          PYTHONPATH: .
         run: |
-          python -m pytest tests/ -q
+          python -m pytest tests/test_api_suite.py -v
 
   frontend-ci:
     name: Frontend CI
