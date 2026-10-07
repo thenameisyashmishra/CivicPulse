@@ -30,7 +30,7 @@ jobs:
       - name: Run Backend Pytest Suite
         run: |
           cd backend
-          python -m pytest tests/test_api_suite.py -v
+          python -m pytest tests/ -v
 
   frontend-ci:
     name: Frontend CI
@@ -54,6 +54,10 @@ jobs:
       - name: Run TypeScript Typecheck
         run: |
           npm run --prefix frontend typecheck
+
+      - name: Run Unit Tests
+        run: |
+          npm run --prefix frontend test
 
       - name: Run Frontend Build
         run: |

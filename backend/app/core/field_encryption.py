@@ -24,8 +24,11 @@ _cipher_instance: Optional[Fernet] = None
 def _get_fernet_cipher() -> Fernet:
     global _cipher_instance
     if _cipher_instance is None:
-        # Derive a 32-byte URL-safe base64 key from jwt_secret_key or field_encryption_key
-        raw_key = get_secret("field_encryption_key", default=settings.jwt_secret_key)
+        # Dedicated field encryption key; domain-separated fallback in dev mode
+        raw_key = settings.field_encryption_key or get_secret("field_encryption_key", default="")
+        if not raw_key:
+            # Cryptographic domain separation from JWT key to prevent key reuse vulnerability
+            raw_key = hashlib.sha256(f"civicpulse_pii_domain_salt_{settings.jwt_secret_key}".encode("utf-8")).hexdigest()
         derived = hashlib.sha256(raw_key.encode("utf-8")).digest()
         key_b64 = base64.urlsafe_b64encode(derived)
         _cipher_instance = Fernet(key_b64)
@@ -33,7 +36,7 @@ def _get_fernet_cipher() -> Fernet:
 
 
 def encrypt_pii(plaintext: Optional[str]) -> Optional[str]:
-    """Encrypt a sensitive plaintext string to a ciphertext string."""
+    """Encrypt a sensitive plaintext string to a ciphertext string. Fails closed to protect citizen PII."""
     if not plaintext:
         return plaintext
     try:
@@ -41,7 +44,7 @@ def encrypt_pii(plaintext: Optional[str]) -> Optional[str]:
         return cipher.encrypt(plaintext.encode("utf-8")).decode("utf-8")
     except Exception as exc:
         logger.error("PII encryption failed: %s", exc)
-        return plaintext
+        raise RuntimeError("PII encryption failure - refusing to persist plaintext data in violation of DPDP Act 2023") from exc
 
 
 def decrypt_pii(ciphertext: Optional[str]) -> Optional[str]:

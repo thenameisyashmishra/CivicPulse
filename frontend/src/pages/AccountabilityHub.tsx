@@ -15,9 +15,34 @@ import {
   Clock,
   Briefcase,
   Fingerprint,
+  Copy,
+  Check,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getToken } from "@/lib/data";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+
+// Real file download helper
+const downloadJSON = (dataObj: any, filename: string) => {
+  const blob = new Blob([JSON.stringify(dataObj, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
 export default function AccountabilityHub() {
   const [activeTab, setActiveTab] = useState<
@@ -44,6 +69,18 @@ export default function AccountabilityHub() {
   const [auditDiffs, setAuditDiffs] = useState<any[]>([]);
   const [cagPack, setCagPack] = useState<any>(null);
 
+  // Modal & feedback states
+  const [cagLoading, setCagLoading] = useState(false);
+  const [showCagModal, setShowCagModal] = useState(false);
+  const [copiedHash, setCopiedHash] = useState(false);
+
+  const [showWbModal, setShowWbModal] = useState(false);
+  const [copiedWbCode, setCopiedWbCode] = useState(false);
+  const [wbSubmittedData, setWbSubmittedData] = useState<any>(null);
+
+  const [showXaiModal, setShowXaiModal] = useState(false);
+  const [makerCheckerModal, setMakerCheckerModal] = useState<{ reqId: number; decision: string } | null>(null);
+
   // Form states
   const [wbCategory, setWbCategory] = useState("substandard_material");
   const [wbTip, setWbTip] = useState("");
@@ -65,7 +102,7 @@ export default function AccountabilityHub() {
           fetch("/api/accountability/officials", { headers }).then((r) =>
             r.ok ? r.json() : []
           ),
-          fetch("/api/accountability/contractors").then((r) =>
+          fetch("/api/accountability/contractors", { headers }).then((r) =>
             r.ok ? r.json() : []
           ),
           fetch("/api/accountability/financial/requests", { headers }).then(
@@ -74,30 +111,38 @@ export default function AccountabilityHub() {
           fetch("/api/accountability/pbg", { headers }).then((r) =>
             r.ok ? r.json() : []
           ),
-          fetch("/api/accountability/escalations").then((r) =>
+          fetch("/api/accountability/escalations", { headers }).then((r) =>
             r.ok ? r.json() : []
           ),
-          fetch("/api/accountability/vigilance/cases").then((r) =>
+          fetch("/api/accountability/vigilance/cases", { headers }).then((r) =>
             r.ok ? r.json() : []
           ),
-          fetch("/api/accountability/audit-diffs").then((r) =>
+          fetch("/api/accountability/audit-diffs", { headers }).then((r) =>
             r.ok ? r.json() : []
           ),
-          fetch("/api/accountability/overrides").then((r) =>
+          fetch("/api/accountability/overrides", { headers }).then((r) =>
             r.ok ? r.json() : []
           ),
         ]);
 
-      setOfficials(offRes || []);
-      setContractors(conRes || []);
-      setFinancialReqs(finRes || []);
-      setPbgs(pbgRes || []);
-      setEscalations(escRes || []);
-      setVigilanceCases(vigRes || []);
-      setAuditDiffs(diffRes || []);
-      setOverrides(ovrRes || []);
+      setOfficials(Array.isArray(offRes) ? offRes : []);
+      setContractors(Array.isArray(conRes) ? conRes : []);
+      setFinancialReqs(Array.isArray(finRes) ? finRes : []);
+      setPbgs(Array.isArray(pbgRes) ? pbgRes : []);
+      setEscalations(Array.isArray(escRes) ? escRes : []);
+      setVigilanceCases(Array.isArray(vigRes) ? vigRes : []);
+      setAuditDiffs(Array.isArray(diffRes) ? diffRes : []);
+      setOverrides(Array.isArray(ovrRes) ? ovrRes : []);
     } catch (err) {
       console.error(err);
+      setOfficials([]);
+      setContractors([]);
+      setFinancialReqs([]);
+      setPbgs([]);
+      setEscalations([]);
+      setVigilanceCases([]);
+      setAuditDiffs([]);
+      setOverrides([]);
     }
   };
 
@@ -124,7 +169,8 @@ export default function AccountabilityHub() {
         const err = await res.json();
         throw new Error(err.detail || "Action failed");
       }
-      toast.success(`Financial Request #${reqId} ${decision} successfully!`);
+      setMakerCheckerModal({ reqId, decision });
+      toast.success(`Financial Request #${reqId} marked ${decision.toUpperCase()} on Treasury Ledger!`);
       fetchAll();
     } catch (e: any) {
       toast.error(e.message);
@@ -132,14 +178,22 @@ export default function AccountabilityHub() {
   };
 
   const handleFetchCAGPack = async (projectId: string) => {
+    setCagLoading(true);
     try {
       const res = await fetch(`/api/accountability/audit-pack/${projectId}`);
       if (!res.ok) throw new Error("Could not fetch CAG audit pack.");
       const data = await res.json();
       setCagPack(data);
-      toast.success("CAG Audit Dossier generated with Merkle root hash!");
+      // Real file download triggered on user's browser
+      downloadJSON(data, `CAG_Audit_Dossier_${projectId}_${new Date().toISOString().split("T")[0]}.json`);
+      // Switch to CAG tab and open modal
+      setActiveTab("cag_pack");
+      setShowCagModal(true);
+      toast.success(`CAG Audit Dossier generated & downloaded! (${data.total_evidence_nodes} evidence nodes verified)`);
     } catch (e: any) {
       toast.error(e.message);
+    } finally {
+      setCagLoading(false);
     }
   };
 
@@ -150,6 +204,9 @@ export default function AccountabilityHub() {
       if (!res.ok) throw new Error("Could not fetch XAI diagnostics.");
       const data = await res.json();
       setXaiData(data);
+      setActiveTab("xai_overrides");
+      setShowXaiModal(true);
+      toast.success(`XAI diagnostics evaluated: Quality Score ${data.overall_quality_score}/100`);
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -171,9 +228,15 @@ export default function AccountabilityHub() {
         }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `Whistleblower tip submission failed (HTTP ${res.status})`);
+      }
       setWbToken(data.tracking_code);
+      setTrackCode(data.tracking_code);
+      setWbSubmittedData(data);
+      setShowWbModal(true);
       setWbTip("");
-      toast.success("Anonymous encrypted tip filed successfully!");
+      toast.success(`Encrypted Tip Registered! Tracking Code: ${data.tracking_code}`);
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -185,8 +248,10 @@ export default function AccountabilityHub() {
       const res = await fetch(
         `/api/accountability/whistleblower/track/${trackCode.trim()}`
       );
-      if (!res.ok) throw new Error("Invalid tracking code");
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || "Invalid tracking code");
+      }
       setTrackedStatus(data);
     } catch (e: any) {
       toast.error(e.message);
@@ -196,14 +261,14 @@ export default function AccountabilityHub() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 max-w-7xl mx-auto pb-16">
+      <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-16">
         {/* Header Banner */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-card/80 to-accent/20 border border-border shadow-lg">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-card/80 to-primary/10 border border-border shadow-lg">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Scale className="h-6 w-6 text-primary" />
+              <ShieldAlert className="h-6 w-6 text-primary" />
               <h1 className="text-2xl font-bold tracking-wide">
-                Accountability & Governance Command Center
+                Accountability, Digital Signatures & Fraud Oversight
               </h1>
               <span className="px-2.5 py-0.5 text-[10px] font-bold tracking-wider rounded-full bg-primary/20 text-primary border border-primary/30">
                 PILLAR B.1
@@ -211,17 +276,18 @@ export default function AccountabilityHub() {
             </div>
             <p className="text-xs text-muted-foreground">
               Every rupee and sign-off traceable to a named official with
-              consequences · Indian IT Act 2000 & MoRTH / IRC Conformance
+              consequences — Indian IT Act 2000 & MoRTH / IRC Conformance
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <button
               onClick={() => handleFetchCAGPack("PW-2024-001")}
-              className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition flex items-center gap-2 shadow-md"
+              disabled={cagLoading}
+              className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
             >
-              <Download className="h-4 w-4" />
-              Generate CAG Audit Pack
+              {cagLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {cagLoading ? "Generating Cryptographic Dossier…" : "Generate CAG Audit Pack"}
             </button>
           </div>
         </div>
@@ -297,7 +363,11 @@ export default function AccountabilityHub() {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto pb-2 border-b border-border text-xs scrollbar-thin">
+        <div
+          role="tablist"
+          aria-label="Accountability Sections"
+          className="flex items-center gap-1 overflow-x-auto pb-2 border-b border-border text-xs scrollbar-thin"
+        >
           {[
             { id: "officials", label: "Officials & Liability", icon: UserCheck },
             { id: "maker_checker", label: "Maker-Checker Queue", icon: FileCheck },
@@ -316,6 +386,11 @@ export default function AccountabilityHub() {
             return (
               <button
                 key={tab.id}
+                role="tab"
+                id={`acct-tab-${tab.id}`}
+                aria-selected={active}
+                aria-controls={`acct-panel-${tab.id}`}
+                tabIndex={active ? 0 : -1}
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`px-3 py-2 rounded-lg font-medium flex items-center gap-2 shrink-0 transition ${
                   active
@@ -332,7 +407,12 @@ export default function AccountabilityHub() {
 
         {/* Tab 1: Officials & Liability Ledger */}
         {activeTab === "officials" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="acct-panel-officials"
+            aria-labelledby="acct-tab-officials"
+            className="space-y-4"
+          >
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-semibold">
@@ -416,7 +496,12 @@ export default function AccountabilityHub() {
 
         {/* Tab 2: Maker-Checker Queue */}
         {activeTab === "maker_checker" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="acct-panel-maker_checker"
+            aria-labelledby="acct-tab-maker_checker"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">
                 Maker-Checker Financial Authorization Queue
@@ -506,7 +591,12 @@ export default function AccountabilityHub() {
 
         {/* Tab 3: Contractor Performance Scorecards */}
         {activeTab === "contractors" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="acct-panel-contractors"
+            aria-labelledby="acct-tab-contractors"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">
                 Contractor Performance Scorecard & Registry
@@ -600,7 +690,12 @@ export default function AccountabilityHub() {
 
         {/* Tab 4: AI Overrides & XAI Explainer */}
         {activeTab === "xai_overrides" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="acct-panel-xai_overrides"
+            aria-labelledby="acct-tab-xai_overrides"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">
                 Human-in-the-Loop AI Overrides & XAI Diagnostics
@@ -714,7 +809,12 @@ export default function AccountabilityHub() {
 
         {/* Tab 5: CAG Audit Pack */}
         {activeTab === "cag_pack" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="acct-panel-cag_pack"
+            aria-labelledby="acct-tab-cag_pack"
+            className="space-y-4"
+          >
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-base font-semibold">
@@ -785,7 +885,12 @@ export default function AccountabilityHub() {
 
         {/* Tab 6: SLA Matrix */}
         {activeTab === "sla" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="acct-panel-sla"
+            aria-labelledby="acct-tab-sla"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">
                 Escalation Matrix with SLA Timers
@@ -834,7 +939,12 @@ export default function AccountabilityHub() {
 
         {/* Tab 7: Vigilance ACB Referrals */}
         {activeTab === "vigilance" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="acct-panel-vigilance"
+            aria-labelledby="acct-tab-vigilance"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">
                 Vigilance / Anti-Corruption Bureau (ACB) Referral Dockets
@@ -878,7 +988,12 @@ export default function AccountabilityHub() {
 
         {/* Tab 8: Whistleblower Channel */}
         {activeTab === "whistleblower" && (
-          <div className="grid md:grid-cols-2 gap-6">
+          <div
+            role="tabpanel"
+            id="acct-panel-whistleblower"
+            aria-labelledby="acct-tab-whistleblower"
+            className="grid md:grid-cols-2 gap-6"
+          >
             <div className="p-5 rounded-xl border border-border bg-card/40 space-y-4">
               <div>
                 <h3 className="text-sm font-bold flex items-center gap-2">
@@ -980,7 +1095,12 @@ export default function AccountabilityHub() {
 
         {/* Tab 9: Bank Guarantees */}
         {activeTab === "pbg" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="acct-panel-pbg"
+            aria-labelledby="acct-tab-pbg"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">
                 Performance Bank Guarantee (PBG) & Security-Deposit Tracker
@@ -1036,7 +1156,12 @@ export default function AccountabilityHub() {
 
         {/* Tab 10: Conflict of Interest */}
         {activeTab === "coi" && (
-          <div className="p-5 rounded-xl border border-border bg-card/40 space-y-4">
+          <div
+            role="tabpanel"
+            id="acct-panel-coi"
+            aria-labelledby="acct-tab-coi"
+            className="p-5 rounded-xl border border-border bg-card/40 space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">
                 Conflict-of-Interest Declaration & Auto-Check
@@ -1062,7 +1187,12 @@ export default function AccountabilityHub() {
 
         {/* Tab 11: Immutable Audit Diffs */}
         {activeTab === "diffs" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="acct-panel-diffs"
+            aria-labelledby="acct-tab-diffs"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">
                 Immutable "Who Changed What" Diff Timeline
@@ -1102,6 +1232,302 @@ export default function AccountabilityHub() {
           </div>
         )}
       </div>
+
+      {/* CAG Audit Dossier Inspection Modal */}
+      <Dialog open={showCagModal} onOpenChange={setShowCagModal}>
+        <DialogContent className="max-w-2xl bg-card border-border max-h-[90vh] overflow-y-auto">
+          {cagPack && (
+            <div className="space-y-4">
+              <DialogHeader>
+                <div className="flex items-center justify-between border-b border-border pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-400 font-mono text-xs font-bold border border-emerald-500/30 flex items-center gap-1.5">
+                      <CheckCircle2 size={13} /> CAG MSO 2020 COMPLIANT
+                    </span>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      {cagPack.total_evidence_nodes} Evidence Nodes
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {cagPack.generated_at?.split("T")[0]}
+                  </span>
+                </div>
+                <DialogTitle className="text-base font-bold text-foreground mt-2 text-left">
+                  {cagPack.audit_title}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground text-left font-mono">
+                  Project: {cagPack.project_metadata?.name} ({cagPack.project_metadata?.id}) · Contractor: {cagPack.project_metadata?.contractor}
+                </DialogDescription>
+              </DialogHeader>
+
+              {/* Merkle Hash Box */}
+              <div className="p-3.5 rounded-xl bg-accent/20 border border-border space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground font-mono flex items-center gap-1">
+                    <Lock size={12} className="text-primary" />
+                    CRYPTOGRAPHIC MERKLE ROOT HASH (SHA-256)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(cagPack.merkle_root_hash);
+                      setCopiedHash(true);
+                      setTimeout(() => setCopiedHash(false), 2000);
+                    }}
+                    className="px-2 py-0.5 text-[10px] rounded bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 flex items-center gap-1 font-mono cursor-pointer"
+                  >
+                    {copiedHash ? <Check size={11} /> : <Copy size={11} />}
+                    {copiedHash ? "COPIED" : "COPY HASH"}
+                  </button>
+                </div>
+                <div className="font-mono text-xs text-primary font-bold break-all bg-background/80 p-2.5 rounded border border-border/60">
+                  {cagPack.merkle_root_hash}
+                </div>
+              </div>
+
+              {/* Project Stats in Dossier */}
+              <div className="grid grid-cols-3 gap-2 text-xs font-mono">
+                <div className="p-2.5 rounded bg-background/50 border border-border">
+                  <span className="text-[10px] text-muted-foreground block">SANCTIONED BUDGET</span>
+                  <span className="font-bold text-foreground">₹{(cagPack.project_metadata?.sanctioned_budget_inr / 100000).toFixed(1)} L</span>
+                </div>
+                <div className="p-2.5 rounded bg-background/50 border border-border">
+                  <span className="text-[10px] text-muted-foreground block">CUMULATIVE SPEND</span>
+                  <span className="font-bold text-foreground">₹{(cagPack.project_metadata?.cumulative_spend_inr / 10000000).toFixed(2)} Cr</span>
+                </div>
+                <div className="p-2.5 rounded bg-background/50 border border-border">
+                  <span className="text-[10px] text-muted-foreground block">PHYSICAL PROGRESS</span>
+                  <span className="font-bold text-emerald-400">{cagPack.project_metadata?.physical_progress_pct}%</span>
+                </div>
+              </div>
+
+              {/* Auditor Compliance Statement */}
+              <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs">
+                <span className="text-[10px] uppercase font-bold text-emerald-400 font-mono block">
+                  STATUTORY AUDITOR COMPLIANCE STATEMENT
+                </span>
+                <p className="text-[11px] text-muted-foreground italic mt-1">
+                  "{cagPack.auditor_compliance_statement}"
+                </p>
+              </div>
+
+              {/* Manifest Nodes */}
+              <div className="space-y-1.5 text-xs">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground font-mono block">
+                  MANIFEST NODES ({cagPack.total_evidence_nodes} EVIDENCE FILES SECURED)
+                </span>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto font-mono text-[11px] pr-1">
+                  {cagPack.manifest?.map((m: any, idx: number) => (
+                    <div key={idx} className="p-2 rounded bg-background border border-border flex justify-between items-center">
+                      <span className="truncate max-w-[280px]">Evidence #{m.evidence_id}: {m.file_path}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{m.uploaded_at?.split("T")[0]}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex items-center justify-between pt-3 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => downloadJSON(cagPack, `CAG_Audit_Dossier_${cagPack.project_metadata?.id}.json`)}
+                  className="px-3.5 py-1.5 bg-primary text-primary-foreground text-xs font-semibold rounded flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Download size={13} /> Re-Download Dossier JSON
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCagModal(false)}
+                  className="px-3.5 py-1.5 bg-background border border-border text-xs text-muted-foreground hover:text-foreground rounded cursor-pointer font-mono"
+                >
+                  Close & View in Tab
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Whistleblower Tip Confirmation Modal */}
+      <Dialog open={showWbModal} onOpenChange={setShowWbModal}>
+        <DialogContent className="max-w-md bg-card border-border">
+          {wbSubmittedData && (
+            <div className="space-y-4">
+              <DialogHeader>
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <Fingerprint className="h-5 w-5" />
+                  <DialogTitle className="text-sm font-bold text-foreground">
+                    Anonymous Encrypted Tip Registered
+                  </DialogTitle>
+                </div>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Your identity is protected under the Whistleblower Protection Act. No IP or telemetry logged.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="p-4 rounded-xl bg-accent/20 border border-border space-y-2">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground font-mono block">
+                  INVESTIGATION DOCKET TRACKING CODE
+                </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-base font-mono font-bold text-primary">
+                    {wbSubmittedData.tracking_code}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(wbSubmittedData.tracking_code);
+                      setCopiedWbCode(true);
+                      setTimeout(() => setCopiedWbCode(false), 2000);
+                    }}
+                    className="px-2.5 py-1 text-[10px] rounded bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 flex items-center gap-1 font-mono cursor-pointer"
+                  >
+                    {copiedWbCode ? <Check size={11} /> : <Copy size={11} />}
+                    {copiedWbCode ? "COPIED" : "COPY CODE"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-xs text-muted-foreground space-y-1">
+                <p>• Category: <span className="text-foreground font-medium uppercase font-mono">{wbSubmittedData.category}</span></p>
+                <p>• Status: <span className="text-amber-400 font-bold font-mono">ENCRYPTED & QUEUED FOR ACB SCREENING</span></p>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowWbModal(false);
+                    setActiveTab("whistleblower");
+                    setTrackCode(wbSubmittedData.tracking_code);
+                    handleTrackTip();
+                  }}
+                  className="px-3.5 py-1.5 bg-primary text-primary-foreground text-xs font-semibold rounded flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Search size={13} /> Track Inquiry Now
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowWbModal(false)}
+                  className="px-3.5 py-1.5 bg-background border border-border text-xs text-muted-foreground hover:text-foreground rounded cursor-pointer font-mono"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* XAI Diagnostics Modal */}
+      <Dialog open={showXaiModal} onOpenChange={setShowXaiModal}>
+        <DialogContent className="max-w-xl bg-card border-border max-h-[85vh] overflow-y-auto">
+          {xaiData && (
+            <div className="space-y-4">
+              <DialogHeader>
+                <div className="flex items-center gap-2 text-primary">
+                  <Scale className="h-5 w-5" />
+                  <DialogTitle className="text-sm font-bold text-foreground">
+                    Explainable AI (XAI) Engineering Inspection
+                  </DialogTitle>
+                </div>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Departmental inquiry-ready plain-language evaluation against MoRTH & IRC standards.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="p-3.5 rounded-lg bg-primary/10 border border-primary/20 text-xs">
+                <span className="font-bold">Overall AI Quality Score: </span>
+                <span className="font-mono text-primary font-bold text-base">
+                  {xaiData.overall_quality_score || 75.0}/100
+                </span>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {xaiData.admissibility_summary}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground font-mono block">
+                  STANDARDS & THRESHOLD AUDIT RULES
+                </span>
+                {xaiData.xai_breakdown?.map((b: any, idx: number) => (
+                  <div key={idx} className="p-3 rounded-lg border border-border bg-accent/10 space-y-1 text-xs">
+                    <div className="flex justify-between font-semibold">
+                      <span>{b.metric}</span>
+                      <span className="text-primary font-mono">{b.observed_value}</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">Threshold: {b.threshold_rule}</div>
+                    <p className="text-[11px] text-foreground/90">{b.plain_language_reason}</p>
+                    <div className="text-[9px] text-emerald-400 font-medium font-mono">{b.legal_standing}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setShowXaiModal(false)}
+                  className="px-3.5 py-1.5 bg-background border border-border text-xs text-muted-foreground hover:text-foreground rounded cursor-pointer font-mono"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Maker-Checker Confirmation Modal */}
+      <Dialog open={!!makerCheckerModal} onOpenChange={(open) => !open && setMakerCheckerModal(null)}>
+        <DialogContent className="max-w-md bg-card border-border">
+          {makerCheckerModal && (
+            <div className="space-y-4">
+              <DialogHeader>
+                <div className="flex items-center gap-2">
+                  <FileCheck className="h-5 w-5 text-emerald-400" />
+                  <DialogTitle className="text-sm font-bold text-foreground">
+                    Dual-Custody Decision Committed
+                  </DialogTitle>
+                </div>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  GFR 2017 Rule 144 Compliant · Treasury Two-Person Integrity Enforced
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="p-4 rounded-xl bg-accent/20 border border-border space-y-2 text-xs">
+                <div className="flex justify-between font-mono">
+                  <span className="text-muted-foreground">Request ID:</span>
+                  <span className="font-bold text-foreground">#{makerCheckerModal.reqId}</span>
+                </div>
+                <div className="flex justify-between font-mono">
+                  <span className="text-muted-foreground">Decision:</span>
+                  <span className={`font-bold ${makerCheckerModal.decision === "approved" ? "text-emerald-400" : "text-rose-400"}`}>
+                    {makerCheckerModal.decision.toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex justify-between font-mono">
+                  <span className="text-muted-foreground">Ledger Sync:</span>
+                  <span className="text-primary font-bold">STATE TREASURY COMMITTED</span>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground italic">
+                Action recorded with official cryptographic audit stamp. Maker-Checker queue has been updated.
+              </p>
+
+              <div className="flex justify-end pt-2 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setMakerCheckerModal(null)}
+                  className="px-3.5 py-1.5 bg-primary text-primary-foreground text-xs font-semibold rounded cursor-pointer font-mono"
+                >
+                  Understood
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

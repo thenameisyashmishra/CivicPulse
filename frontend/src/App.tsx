@@ -1,9 +1,11 @@
 import React, { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Route, Switch, useLocation } from "wouter";
+import { Route, Switch, Redirect } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
+import RoleRestrictedGuard from "./components/RoleRestrictedGuard";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { SidebarProvider } from "./contexts/SidebarContext";
 import { getToken } from "./lib/data";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
@@ -38,15 +40,13 @@ function PageLoader() {
 }
 
 /** Instant auth gate without layout shift */
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
-  const [, navigate] = useLocation();
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = getToken();
 
   if (!token) {
-    navigate("/login", { replace: true });
-    return null;
+    return <Redirect to="/login" replace />;
   }
-  return <Component />;
+  return <>{children}</>;
 }
 
 function Router() {
@@ -54,20 +54,68 @@ function Router() {
     <Suspense fallback={<PageLoader />}>
       <Switch>
         <Route path="/login" component={Login} />
-        <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
-        <Route path="/projects" component={() => <ProtectedRoute component={Projects} />} />
-        <Route path="/verifications" component={() => <ProtectedRoute component={Verifications} />} />
-        <Route path="/accountability" component={() => <ProtectedRoute component={AccountabilityHub} />} />
+        <Route path="/">
+          <ProtectedRoute><Dashboard /></ProtectedRoute>
+        </Route>
+        <Route path="/projects">
+          <ProtectedRoute><Projects /></ProtectedRoute>
+        </Route>
+        <Route path="/verifications">
+          <ProtectedRoute><Verifications /></ProtectedRoute>
+        </Route>
+        <Route path="/accountability">
+          <ProtectedRoute>
+            <RoleRestrictedGuard allowedRoles={["admin", "engineer", "pradhan"]} hubName="Social Accountability & Public Hearings">
+              <AccountabilityHub />
+            </RoleRestrictedGuard>
+          </ProtectedRoute>
+        </Route>
         <Route path="/transparency" component={TransparencyPortal} />
-        <Route path="/lifecycle" component={() => <ProtectedRoute component={LifecycleHub} />} />
-        <Route path="/engineering" component={() => <ProtectedRoute component={EngineeringVisionHub} />} />
-        <Route path="/fraud-intel" component={() => <ProtectedRoute component={FraudIntelCenter} />} />
+        <Route path="/lifecycle">
+          <ProtectedRoute>
+            <RoleRestrictedGuard allowedRoles={["admin", "engineer", "pradhan"]} hubName="Project Lifecycle Tracking Hub">
+              <LifecycleHub />
+            </RoleRestrictedGuard>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/engineering">
+          <ProtectedRoute>
+            <RoleRestrictedGuard allowedRoles={["admin", "engineer"]} hubName="Engineering Vision AI Hub">
+              <EngineeringVisionHub />
+            </RoleRestrictedGuard>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/fraud-intel">
+          <ProtectedRoute>
+            <RoleRestrictedGuard allowedRoles={["admin", "engineer"]} hubName="Fraud & Anomaly Intelligence Center">
+              <FraudIntelCenter />
+            </RoleRestrictedGuard>
+          </ProtectedRoute>
+        </Route>
         <Route path="/engagement" component={CitizenEngagementPortal} />
-        <Route path="/gov-security" component={() => <ProtectedRoute component={GovSecurityCenter} />} />
-        <Route path="/policy-governance" component={() => <ProtectedRoute component={PolicyGovernanceHub} />} />
-        <Route path="/map" component={() => <ProtectedRoute component={SiteMap} />} />
-        <Route path="/reports" component={() => <ProtectedRoute component={Reports} />} />
-        <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
+        <Route path="/gov-security">
+          <ProtectedRoute>
+            <RoleRestrictedGuard allowedRoles={["admin"]} hubName="Government Interoperability & Security Center">
+              <GovSecurityCenter />
+            </RoleRestrictedGuard>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/policy-governance">
+          <ProtectedRoute>
+            <RoleRestrictedGuard allowedRoles={["admin"]} hubName="Policy, Scale & AI Model Governance Hub">
+              <PolicyGovernanceHub />
+            </RoleRestrictedGuard>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/map">
+          <ProtectedRoute><SiteMap /></ProtectedRoute>
+        </Route>
+        <Route path="/reports">
+          <ProtectedRoute><Reports /></ProtectedRoute>
+        </Route>
+        <Route path="/settings">
+          <ProtectedRoute><Settings /></ProtectedRoute>
+        </Route>
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
@@ -92,11 +140,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ErrorBoundary>
-        <ThemeProvider defaultTheme="dark">
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
+        <ThemeProvider defaultTheme="light" switchable={true}>
+          <SidebarProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Router />
+            </TooltipProvider>
+          </SidebarProvider>
         </ThemeProvider>
       </ErrorBoundary>
     </QueryClientProvider>

@@ -77,6 +77,106 @@ export default function Reports() {
       .catch(() => toast.error("Export failed — make sure the backend is running."));
   };
 
+  const handleExportPdf = () => {
+    try {
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) {
+        toast.error("Popup blocked. Please allow popups to view the PDF report.");
+        return;
+      }
+      const now = new Date().toLocaleDateString("en-IN", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const rowsHtml = projects
+        .map((p) => {
+          const rem = p.budget - p.spent;
+          const pct = p.budget > 0 ? Math.round((p.spent / p.budget) * 100) : 0;
+          return `
+            <tr>
+              <td style="padding:8px;border-bottom:1px solid #ddd;"><strong>${p.name}</strong><br><span style="font-size:11px;color:#666;">${p.id} · ${p.contractor}</span></td>
+              <td style="padding:8px;border-bottom:1px solid #ddd;text-align:right;">${formatCurrency(p.budget)}</td>
+              <td style="padding:8px;border-bottom:1px solid #ddd;text-align:right;">${formatCurrency(p.spent)}</td>
+              <td style="padding:8px;border-bottom:1px solid #ddd;text-align:right;color:${rem < 0 ? '#d32f2f' : '#2e7d32'};">${rem < 0 ? '-' : ''}${formatCurrency(Math.abs(rem))}</td>
+              <td style="padding:8px;border-bottom:1px solid #ddd;text-align:center;">${pct}%</td>
+              <td style="padding:8px;border-bottom:1px solid #ddd;text-align:center;"><span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;text-transform:uppercase;background:#eee;">${p.status}</span></td>
+            </tr>
+          `;
+        })
+        .join("");
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>CivicPulse — Executive Public Works Audit Report</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #1a1a1a; }
+            .header { border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 20px; }
+            .title { font-size: 20px; font-weight: bold; color: #0f172a; margin: 0; }
+            .subtitle { font-size: 12px; color: #64748b; margin-top: 4px; }
+            .kpis { display: flex; gap: 20px; margin-bottom: 25px; }
+            .kpi { flex: 1; padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc; }
+            .kpi-title { font-size: 11px; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
+            .kpi-val { font-size: 18px; font-weight: bold; color: #0284c7; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th { background: #f1f5f9; padding: 8px; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; border-bottom: 2px solid #cbd5e1; }
+            .signatures { margin-top: 50px; display: flex; justify-content: space-between; padding-top: 30px; }
+            .sig-box { width: 220px; border-top: 1px solid #94a3b8; text-align: center; font-size: 11px; color: #64748b; padding-top: 6px; }
+            @media print {
+              body { padding: 0; }
+              @page { margin: 1.5cm; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="title">CIVICPULSE — STATUTORY PUBLIC WORKS AUDIT DOSSIER</h1>
+            <p class="subtitle">Ministry of Rural Development & Panchayati Raj · Generated on: ${now}</p>
+          </div>
+          <div class="kpis">
+            <div class="kpi"><div class="kpi-title">Monitored Projects</div><div class="kpi-val">${projects.length}</div></div>
+            <div class="kpi"><div class="kpi-title">Sanctioned Budget</div><div class="kpi-val">${formatCurrency(totalBudget)}</div></div>
+            <div class="kpi"><div class="kpi-title">Disbursed Spend</div><div class="kpi-val">${formatCurrency(totalSpent)}</div></div>
+            <div class="kpi"><div class="kpi-title">AI Verifications</div><div class="kpi-val">${verifications.length}</div></div>
+          </div>
+          <h3 style="font-size:14px; margin-bottom:10px;">Project Budget & Physical Progress Ledger</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Project & Contractor</th>
+                <th style="text-align:right;">Sanctioned</th>
+                <th style="text-align:right;">Spent</th>
+                <th style="text-align:right;">Remaining</th>
+                <th style="text-align:center;">Burn %</th>
+                <th style="text-align:center;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+          <div class="signatures">
+            <div class="sig-box">Executive Engineer / PWD In-Charge</div>
+            <div class="sig-box">Gram Panchayat / Pradhan Counter-Sign</div>
+            <div class="sig-box">CAG / State Quality Monitor (SQM)</div>
+          </div>
+          <script>
+            window.onload = function() { window.print(); };
+          </script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      toast.success("Executive PDF report generated! Print dialog initiated.");
+    } catch {
+      toast.error("Failed to generate PDF report.");
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
@@ -93,15 +193,15 @@ export default function Reports() {
           <div className="flex items-center gap-2">
             <button
               onClick={handleExportCsv}
-              className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border border-border text-muted-foreground text-xs hover:text-foreground transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border border-border text-muted-foreground text-xs hover:text-foreground transition-colors cursor-pointer"
               style={{ fontFamily: "var(--font-mono)" }}
             >
               <FileDown size={12} />
               CSV
             </button>
             <button
-              onClick={() => toast.info("PDF export — integrate a PDF library for production.")}
-              className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border border-border text-muted-foreground text-xs hover:text-foreground transition-colors"
+              onClick={handleExportPdf}
+              className="flex items-center gap-2 px-3 py-1.5 bg-primary/20 border border-primary/40 text-primary text-xs hover:bg-primary/30 hover:border-primary/60 transition-colors font-semibold cursor-pointer shadow-xs"
               style={{ fontFamily: "var(--font-mono)" }}
             >
               <FileDown size={12} />
@@ -153,7 +253,7 @@ export default function Reports() {
                     <LineChart data={budgetTimeline}>
                       <XAxis dataKey="month" tick={{ fill: "#8B949E", fontSize: 9, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fill: "#8B949E", fontSize: 9, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} unit="Cr" />
-                      <Tooltip contentStyle={{ backgroundColor: "#161B22", border: "1px solid #30363d", borderRadius: 0, fontSize: 11, fontFamily: "JetBrains Mono" }} />
+                      <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: 11, fontFamily: "JetBrains Mono", color: "var(--foreground)" }} />
                       <Line type="monotone" dataKey="allocated" stroke="#00D4FF" strokeWidth={2} dot={false} name="Allocated" />
                       <Line type="monotone" dataKey="spent"     stroke="#FFB347" strokeWidth={2} dot={false} name="Spent" />
                     </LineChart>
@@ -172,7 +272,7 @@ export default function Reports() {
                       <Pie data={statusData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" stroke="none">
                         {statusData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                       </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: "#161B22", border: "1px solid #30363d", borderRadius: 0, fontSize: 11, fontFamily: "JetBrains Mono" }} />
+                      <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: 11, fontFamily: "JetBrains Mono", color: "var(--foreground)" }} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -197,7 +297,7 @@ export default function Reports() {
                       <Pie data={verificationData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" stroke="none">
                         {verificationData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                       </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: "#161B22", border: "1px solid #30363d", borderRadius: 0, fontSize: 11, fontFamily: "JetBrains Mono" }} />
+                      <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: 11, fontFamily: "JetBrains Mono", color: "var(--foreground)" }} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>

@@ -45,10 +45,13 @@ class LocalStorage(StorageBackend):
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def upload(self, relative_path: str, data: bytes, content_type: str = "image/jpeg") -> str:
-        full_path = self.base_dir / relative_path
+        clean_rel = relative_path.replace("\\", "/").lstrip("/")
+        full_path = (self.base_dir / clean_rel).resolve()
+        if not str(full_path).startswith(str(self.base_dir.resolve())):
+            raise ValueError("Path traversal attempt detected in storage relative_path")
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_bytes(data)
-        return f"/uploads/{relative_path.replace('\\', '/')}"
+        return f"/uploads/{clean_rel}"
 
     def get_public_url(self, relative_path: str) -> str:
         return f"/uploads/{relative_path.replace('\\', '/')}"

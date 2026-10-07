@@ -35,9 +35,30 @@ class Settings(BaseSettings):
     # Security & Authentication
     jwt_secret_key: str = "change-this-to-a-long-random-secret-in-production"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 480
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
+    field_encryption_key: str = ""
+    ledger_hmac_key: str = ""
+    otp_signing_secret: str = ""
+    allow_demo_personas: bool = True
 
+    # Cloud Storage & Object Store (S3 / MinIO)
+    storage_backend: str = "local"  # "local" or "s3"
     upload_dir: str = "./uploads"
+    s3_bucket: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_region: str = "ap-south-1"
+    s3_endpoint_url: str = ""
+    cdn_base_url: str = ""
+
+    # HashiCorp Vault Secrets Management
+    vault_url: str = ""
+    vault_token: str = ""
+
+    # Logging
+    log_level: str = "INFO"
+
     cors_origins: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
 
     # Geofence & Spatial
@@ -73,6 +94,16 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "SQLite database is not permitted in production mode. "
                     "Set DATABASE_URL to a production PostgreSQL connection string."
+                )
+            if not self.field_encryption_key or len(self.field_encryption_key) < 32:
+                raise ValueError(
+                    "Insecure or missing field_encryption_key in production. "
+                    "Production requires a high-entropy key of at least 32 characters for DPDP Act 2023 compliance."
+                )
+            if not self.ledger_hmac_key or len(self.ledger_hmac_key) < 32:
+                raise ValueError(
+                    "Insecure or missing ledger_hmac_key in production. "
+                    "Production requires a high-entropy key of at least 32 characters for audit ledger integrity."
                 )
         return self
 

@@ -159,8 +159,8 @@ class RedisCacheManager:
         if self._client:
             try:
                 await self._client.aclose()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Error closing Redis client: %s", exc)
             self._client = None
             self._is_available = False
 

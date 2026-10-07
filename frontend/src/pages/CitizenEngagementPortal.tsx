@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   MessageSquare,
@@ -10,6 +11,7 @@ import {
   FileCheck,
   Share2,
   Accessibility,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,8 +43,10 @@ export default function CitizenEngagementPortal() {
 
   useEffect(() => {
     fetch("/api/engagement/accessibility/manifest")
-      .then((r) => r.json())
-      .then((data) => setAccessibilityData(data))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) setAccessibilityData(data);
+      })
       .catch(console.error);
   }, []);
 
@@ -59,6 +63,9 @@ export default function CitizenEngagementPortal() {
         }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `WhatsApp message failed (HTTP ${res.status})`);
+      }
       setWaLog(data);
       toast.success("WhatsApp message processed by bot!");
     } catch (e: any) {
@@ -78,6 +85,9 @@ export default function CitizenEngagementPortal() {
         }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `SMS command failed (HTTP ${res.status})`);
+      }
       setSmsLog(data);
       toast.success("SMS command parsed!");
     } catch (e: any) {
@@ -98,6 +108,9 @@ export default function CitizenEngagementPortal() {
         }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `Voice grievance processing failed (HTTP ${res.status})`);
+      }
       setVoiceLog(data);
       toast.success("Speech-to-text Whisper transcription complete!");
     } catch (e: any) {
@@ -117,6 +130,9 @@ export default function CitizenEngagementPortal() {
         }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `NLP classification failed (HTTP ${res.status})`);
+      }
       setNlpLog(data);
       toast.success("Complaint auto-routed to nodal department!");
     } catch (e: any) {
@@ -126,7 +142,7 @@ export default function CitizenEngagementPortal() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 max-w-7xl mx-auto pb-16">
+      <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-16">
         {/* Header */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-card/80 to-teal-950/20 border border-border shadow-lg">
           <div>
@@ -146,7 +162,11 @@ export default function CitizenEngagementPortal() {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto pb-2 border-b border-border text-xs scrollbar-thin">
+        <div
+          role="tablist"
+          aria-label="Citizen Engagement Modules"
+          className="flex items-center gap-1 overflow-x-auto pb-2 border-b border-border text-xs scrollbar-thin"
+        >
           {[
             { id: "whatsapp", label: "WhatsApp Bot", icon: MessageSquare },
             { id: "sms", label: "SMS Fallback", icon: Smartphone },
@@ -464,6 +484,15 @@ export default function CitizenEngagementPortal() {
               <p className="text-muted-foreground text-[11px]">
                 Statutory Target: 7 Days · Actual Average: 4.8 Days · Performance: Excellent
               </p>
+              <div className="pt-2 border-t border-border/60">
+                <Link
+                  href="/engineering"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-sans font-semibold text-xs transition"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  Launch Live Road Pothole Camera Scanner &rarr;
+                </Link>
+              </div>
             </div>
           </div>
         )}

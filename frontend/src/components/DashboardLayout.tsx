@@ -1,6 +1,7 @@
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 import GIGWHeader from "./GIGWHeader";
+import OfflineBanner from "./OfflineBanner";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -11,6 +12,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     <div className="flex flex-col h-screen overflow-hidden">
       {/* National Portal GIGW 3.0 Accessibility Bar */}
       <GIGWHeader />
+
+      {/* Rural Offline PWA Mode Auto-Sync Banner */}
+      <OfflineBanner />
 
       <div className="flex-1 flex overflow-hidden">
         <Sidebar />

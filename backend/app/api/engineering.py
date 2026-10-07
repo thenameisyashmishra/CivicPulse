@@ -2,8 +2,10 @@
 API Router for Pillar B.4: Quality Assurance & Engineering Verification (18 Features).
 """
 
+import base64
+import re
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, File, Form, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,25 @@ from app.db.models import User, UserRole
 from app.services.engineering_verification_service import EngineeringVerificationService
 
 router = APIRouter(prefix="/api/engineering", tags=["Quality Assurance & Engineering Verification"])
+
+MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15 MB
+DANGEROUS_PAYLOAD_SIGNATURES = (b"MZ", b"\x7fELF", b"<?php", b"<script", b"#!/bin/")
+
+
+def _is_safe_image_binary(data: bytes) -> bool:
+    """Validate image payload against executable injection and enforce valid image magic bytes."""
+    if len(data) < 12:
+        return False
+    for sig in DANGEROUS_PAYLOAD_SIGNATURES:
+        if data.startswith(sig) or sig in data[:64]:
+            return False
+    # Validate against known image magic headers (JPEG, PNG, WebP, GIF, BMP)
+    is_jpeg = data.startswith(b"\xff\xd8\xff")
+    is_png = data.startswith(b"\x89PNG\r\n\x1a\n")
+    is_webp = data.startswith(b"RIFF") and b"WEBP" in data[8:16]
+    is_gif = data.startswith((b"GIF87a", b"GIF89a"))
+    is_bmp = data.startswith(b"BM")
+    return bool(is_jpeg or is_png or is_webp or is_gif or is_bmp)
 
 
 # -----------------------------------------------------------------------------
@@ -126,23 +147,117 @@ class SampleCustodyRequest(BaseModel):
 # Endpoints
 # -----------------------------------------------------------------------------
 @router.post("/yolo/detect")
-def run_yolo_detection(req: YOLODetectRequest, db: Session = Depends(get_db)):
+def run_yolo_detection(
+    req: YOLODetectRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.run_yolo_detection(db, req.evidence_id)
 
+@router.post("/pothole/detect-image")
+async def detect_potholes_image(
+    file: Optional[UploadFile] = File(None),
+    image_base64: Optional[str] = Form(None),
+    project_id: Optional[str] = Form("PW-2024-001"),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Direct Camera / File Upload Pothole & Road Defect Detection.
+    Accepts either a multipart image file or a base64 encoded data URI, with optional real GPS coordinates.
+    """
+    image_bytes: Optional[bytes] = None
+    if file and file.filename:
+        image_bytes = await file.read()
+    elif image_base64:
+        b64_str = image_base64
+        if "," in b64_str:
+            b64_str = b64_str.split(",", 1)[1]
+        try:
+            image_bytes = base64.b64decode(b64_str)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {str(e)}")
+
+    if not image_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail="No image provided. Please either upload an image file or capture a photo from your camera."
+        )
+
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Image size exceeds the maximum permitted limit of {MAX_IMAGE_BYTES // (1024 * 1024)} MB."
+        )
+
+    if not _is_safe_image_binary(image_bytes):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Disallowed or invalid image format. Only authentic JPEG, PNG, and WebP images are permitted."
+        )
+
+    # Input sanitization
+    if project_id and not re.match(r"^[A-Za-z0-9_-]{3,64}$", project_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid project_id format. Must be alphanumeric and 3-64 characters."
+        )
+
+    if latitude is not None and not (-90.0 <= latitude <= 90.0):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Latitude must be between -90 and 90.")
+
+    if longitude is not None and not (-180.0 <= longitude <= 180.0):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Longitude must be between -180 and 180.")
+
+    from functools import partial
+    import anyio
+    try:
+        detect_fn = partial(
+            EngineeringVerificationService.detect_potholes_from_image_bytes,
+            image_bytes,
+            project_id=project_id,
+            latitude=latitude,
+            longitude=longitude,
+        )
+        res = await anyio.to_thread.run_sync(detect_fn)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Failed to process road image: {str(e)}")
+
+@router.get("/pothole/hazard-pins")
+def get_pothole_hazard_pins(current_user: User = Depends(get_current_user)):
+    """
+    Returns active road hazard defect pins with GPS coordinates, IRC:82 severity, and repair directives for the GIS Map.
+    """
+    return EngineeringVerificationService.get_pothole_hazard_pins()
+
 @router.post("/satellite/diff")
-def perform_satellite_diff(req: SatelliteDiffRequest, db: Session = Depends(get_db)):
+def perform_satellite_diff(
+    req: SatelliteDiffRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.perform_satellite_diff(
         db, req.project_id, req.baseline_date, req.latest_date
     )
 
 @router.post("/gis/alignment")
-def cross_check_gis_alignment(req: GISAlignmentRequest, db: Session = Depends(get_db)):
+def cross_check_gis_alignment(
+    req: GISAlignmentRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.cross_check_gis_alignment(
         db, req.project_id, req.billed_chainage_km, req.surveyed_centerline_km, req.max_lateral_drift_meters
     )
 
 @router.post("/cadastral/check")
-def check_cadastral_parcel(req: CadastralCheckRequest, db: Session = Depends(get_db)):
+def check_cadastral_parcel(
+    req: CadastralCheckRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.check_cadastral_parcel(
         db, req.project_id, req.parcel_id, req.geofence_wkt, req.overlap_pct
     )
@@ -159,25 +274,41 @@ def ingest_drone_survey(
     )
 
 @router.post("/photogrammetry/volume")
-def calculate_photogrammetry_volume(req: PhotogrammetryVolumeRequest, db: Session = Depends(get_db)):
+def calculate_photogrammetry_volume(
+    req: PhotogrammetryVolumeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.calculate_photogrammetry_volume(
         db, req.project_id, req.inspection_id, req.calculated_volume_m3, req.billed_volume_m3
     )
 
 @router.post("/roughness/iri")
-def compute_road_roughness(req: RoadRoughnessRequest, db: Session = Depends(get_db)):
+def compute_road_roughness(
+    req: RoadRoughnessRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.compute_road_roughness(
         db, req.project_id, req.video_uri, req.iri_m_per_km
     )
 
 @router.post("/surface-defect")
-def classify_surface_defect(req: SurfaceDefectRequest, db: Session = Depends(get_db)):
+def classify_surface_defect(
+    req: SurfaceDefectRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.classify_surface_defects(
         db, req.evidence_id, req.defect_category, req.confidence_pct
     )
 
 @router.post("/building-defect")
-def classify_building_defect(req: BuildingDefectRequest, db: Session = Depends(get_db)):
+def classify_building_defect(
+    req: BuildingDefectRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.classify_building_structural_defect(
         db, req.evidence_id, req.defect_type, req.severity
     )
@@ -194,7 +325,11 @@ def validate_material_lab_report(
     )
 
 @router.post("/iot/telemetry")
-def record_iot_telemetry(req: IoTTelemetryRequest, db: Session = Depends(get_db)):
+def record_iot_telemetry(
+    req: IoTTelemetryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.record_iot_telemetry(
         db, req.project_id, req.asset_id, req.sensor_id, req.sensor_type, req.metric_value, req.unit
     )
@@ -210,15 +345,27 @@ def schedule_random_inspection(
     )
 
 @router.post("/authenticity/verify")
-def verify_photo_authenticity(req: AuthenticityVerifyRequest, db: Session = Depends(get_db)):
+def verify_photo_authenticity(
+    req: AuthenticityVerifyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.verify_photo_authenticity(db, req.evidence_id)
 
 @router.post("/multi-angle/enforce")
-def enforce_multi_angle_protocol(req: MultiAngleProtocolRequest, db: Session = Depends(get_db)):
+def enforce_multi_angle_protocol(
+    req: MultiAngleProtocolRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.enforce_multi_angle_protocol(db, req.evidence_id)
 
 @router.post("/boq/reconcile")
-def reconcile_boq_measurement_book(req: BOQReconcileRequest, db: Session = Depends(get_db)):
+def reconcile_boq_measurement_book(
+    req: BOQReconcileRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return EngineeringVerificationService.reconcile_boq_measurement_book(
         db, req.project_id, req.measurement_book_ref, req.item_code, req.billed_quantity, req.ai_verified_quantity
     )

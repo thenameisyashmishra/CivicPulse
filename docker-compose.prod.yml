@@ -10,8 +10,8 @@ services:
     volumes:
       - prod_backend_uploads:/app/uploads
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/civicpulse
-      - JWT_SECRET_KEY=production_secret_should_be_highly_secure_and_loaded_via_env
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-changeme_in_env}@db:5432/${POSTGRES_DB:-civicpulse}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-production_secret_should_be_provided_via_env}
       - ACCESS_TOKEN_EXPIRE_MINUTES=1440
       - GEOFENCE_RADIUS_METERS=100.0
       - REDIS_URL=redis://redis:6379/0
@@ -27,13 +27,11 @@ services:
   db:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=civicpulse
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_in_env}
+      - POSTGRES_DB=${POSTGRES_DB:-civicpulse}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     restart: always
 
   frontend:

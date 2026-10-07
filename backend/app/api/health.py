@@ -19,6 +19,8 @@ from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.deps import require_roles, get_current_user_optional
+from app.db.models import User, UserRole
 from app.db.database import engine, get_db
 
 logger = logging.getLogger(__name__)
@@ -75,8 +77,8 @@ def _memory_usage_mb() -> float | None:
             if platform.system() == "Darwin":
                 return round(usage.ru_maxrss / (1024 * 1024), 2)
             return round(usage.ru_maxrss / 1024, 2)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Could not read process memory: %s", exc)
 
     return None
 
@@ -123,11 +125,16 @@ def liveness_probe():
 @router.get("/ready")
 async def readiness_probe():
     """Deep readiness probe verifying DB write connectivity and Redis health."""
+    import anyio
     db_ok = False
-    try:
+
+    def _probe_db() -> bool:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        db_ok = True
+        return True
+
+    try:
+        db_ok = await anyio.to_thread.run_sync(_probe_db)
     except Exception as e:
         logger.error(f"Readiness check failed on DB: {e}")
 
@@ -179,7 +186,10 @@ async def health_overview():
 
 
 @router.get("/db")
-def health_db_deep(db: Session = Depends(get_db)):
+def health_db_deep(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.engineer)),
+):
     """Deep database health check."""
     is_sqlite = settings.database_url.startswith("sqlite")
     inspector = inspect(engine)
@@ -224,3 +234,46 @@ def health_db_deep(db: Session = Depends(get_db)):
         "pool": _pool_stats(),
         "pg_table_stats": pg_table_stats,
     }
+
+
+@router.get("/network")
+def get_network_info(
+    current_user: User | None = Depends(get_current_user_optional),
+) -> dict:
+    """Return the active LAN IP addresses of the server for mobile pairing."""
+    import socket
+
+    lan_ips: list[str] = []
+    primary_ip = "127.0.0.1"
+
+    # Strategy 1: UDP routing socket to public DNS
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(("8.8.8.8", 80))
+        primary_ip = s.getsockname()[0]
+        lan_ips.append(primary_ip)
+        s.close()
+    except Exception:
+        pass
+
+    # Strategy 2: hostname resolution
+    try:
+        hostname = socket.gethostname()
+        for ip in socket.gethostbyname_ex(hostname)[2]:
+            if not ip.startswith("127.") and ip not in lan_ips:
+                lan_ips.append(ip)
+    except Exception:
+        pass
+
+    if not lan_ips:
+        lan_ips = [primary_ip]
+
+    return {
+        "primary_ip": primary_ip,
+        "available_ips": lan_ips,
+        "frontend_port": 3000,
+        "backend_port": 8000,
+        "mobile_url": f"http://{primary_ip}:3000/engineering",
+    }
+

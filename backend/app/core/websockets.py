@@ -212,8 +212,8 @@ class ConnectionManager:
                 client = await redis_cache.get_client()
                 if client:
                     await client.publish(WS_REDIS_CHANNEL, json.dumps(message))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Redis WS pub/sub bypass or error: %s", exc)
 
     def emit_event(
         self,

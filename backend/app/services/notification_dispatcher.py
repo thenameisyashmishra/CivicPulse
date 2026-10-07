@@ -21,7 +21,17 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-OTP_SECRET_KEY = os.getenv("OTP_SIGNING_SECRET", "civicpulse-production-otp-hmac-key-2024")
+from app.core.config import get_settings
+
+def _get_otp_secret_key() -> str:
+    settings = get_settings()
+    if settings.otp_signing_secret:
+        return settings.otp_signing_secret
+    env_secret = os.getenv("OTP_SIGNING_SECRET")
+    if env_secret:
+        return env_secret
+    return hashlib.sha256(f"civicpulse_otp_domain_salt_{settings.jwt_secret_key}".encode("utf-8")).hexdigest()
+
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gov.in")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
@@ -42,7 +52,8 @@ class NotificationGatewayService:
     @staticmethod
     def sign_token(payload: str) -> str:
         """Creates an HMAC-SHA256 signature for verification payloads."""
-        return hmac.new(OTP_SECRET_KEY.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        key = _get_otp_secret_key()
+        return hmac.new(key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
     @staticmethod
     def verify_token_signature(payload: str, signature: str) -> bool:

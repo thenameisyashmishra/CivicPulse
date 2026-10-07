@@ -124,7 +124,9 @@ def compute_step_signature(
     """
     if not secret_key:
         settings = get_settings()
-        secret_key = getattr(settings, "jwt_secret_key", "civicpulse_secret_key")
+        secret_key = settings.ledger_hmac_key
+        if not secret_key:
+            secret_key = hashlib.sha256(f"civicpulse_ledger_domain_salt_{settings.jwt_secret_key}".encode("utf-8")).hexdigest()
 
     signing_msg = f"{block_hash}:{reviewer_id or 0}:{role}"
     sig = hmac.new(

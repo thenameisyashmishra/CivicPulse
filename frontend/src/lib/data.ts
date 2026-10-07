@@ -81,27 +81,101 @@ export function formatCurrency(value: number): string {
 const TOKEN_KEY = "cp_token";
 const USER_KEY = "cp_user";
 
+export function isTokenExpired(token: string): boolean {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    const payload = JSON.parse(jsonPayload);
+    if (!payload.exp) return false;
+    return payload.exp * 1000 <= Date.now() + 10000;
+  } catch {
+    return false;
+  }
+}
+
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return null;
+  if (isTokenExpired(token)) {
+    clearToken();
+    return null;
+  }
+  return token;
 }
 
 export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+  if (typeof window !== "undefined" && window.localStorage) {
+    localStorage.setItem(TOKEN_KEY, token);
+  }
 }
 
 export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+  if (typeof window !== "undefined" && window.localStorage) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  }
 }
 
 export function getSavedUser(): { name: string; email: string; role: string; aadhaar_verified: boolean; aadhaar_last_4: string | null } | null {
   try {
+    if (typeof window === "undefined" || !window.localStorage) return null;
     const raw = localStorage.getItem(USER_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
+
+export function saveUser(user: { name: string; email: string; role: string; aadhaar_verified: boolean; aadhaar_last_4: string | null }): void {
+  if (typeof window !== "undefined" && window.localStorage) {
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    window.dispatchEvent(new Event("cp_user_updated"));
+  }
+}
+
+export const DEMO_PERSONAS = [
+  {
+    role: "admin",
+    name: "Admin Officer",
+    email: "admin@civicpulse.gov.in",
+    label: "State Administrator (Full Access)",
+    aadhaar_verified: true,
+    aadhaar_last_4: "4210",
+  },
+  {
+    role: "engineer",
+    name: "Er. Rajesh Kumar",
+    email: "rajesh.ee@pwd.gov.in",
+    label: "Executive Engineer (Technical & Field Hubs)",
+    aadhaar_verified: true,
+    aadhaar_last_4: "9823",
+  },
+  {
+    role: "pradhan",
+    name: "Pooja Sharma",
+    email: "pradhan.gram@panchayat.gov.in",
+    label: "Gram Pradhan (Panchayat Governance)",
+    aadhaar_verified: true,
+    aadhaar_last_4: "7712",
+  },
+  {
+    role: "citizen",
+    name: "Amit Patel",
+    email: "amit.citizen@gmail.com",
+    label: "Citizen / Social Auditor (Public Access)",
+    aadhaar_verified: false,
+    aadhaar_last_4: null,
+  },
+];
 
 function authHeader(): Record<string, string> {
   const t = getToken();
@@ -121,9 +195,13 @@ export async function fetchWithAuth<T = any>(path: string, init?: RequestInit): 
   });
 
   if (res.status === 401) {
-    // Token expired or invalid → clear and redirect
+    // Token expired or invalid → clear token
     clearToken();
-    window.location.href = "/login";
+    const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
+    const isPublicRoute = ["/login", "/transparency", "/engagement"].some((p) => currentPath.startsWith(p));
+    if (!isPublicRoute && typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
     throw new Error("Unauthorized");
   }
 
@@ -178,6 +256,26 @@ export async function login(email: string, password: string): Promise<LoginResul
   const data = await res.json();
   setToken(data.access_token);
   localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+  return { user: data.user, token: data.access_token };
+}
+
+/** Quick switch between demo governance roles via secure backend endpoint */
+export async function quickSwitchRole(role: "admin" | "engineer" | "pradhan" | "citizen"): Promise<LoginResult> {
+  const res = await fetch("/api/auth/demo-switch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "Role switch failed");
+    throw new Error(detail);
+  }
+
+  const data = await res.json();
+  setToken(data.access_token);
+  localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+  window.dispatchEvent(new Event("cp_user_updated"));
   return { user: data.user, token: data.access_token };
 }
 
@@ -283,8 +381,8 @@ function mapVerification(e: ApiEvidence, projectMap: Record<string, string>): Ve
     projectName: projectMap[e.project_id] || e.project_id,
     date: e.created_at.split("T")[0],
     status: e.status as VerificationStatus,
-    // API returns 0-1 float; pages expect 0-100 integer
-    confidence: e.ai_confidence != null ? Math.round(e.ai_confidence * 100) : 0,
+    // API may return 0-1 float or 0-100 integer; normalise to 0-100 integer
+    confidence: e.ai_confidence != null ? Math.round(e.ai_confidence <= 1 ? e.ai_confidence * 100 : e.ai_confidence) : 0,
     findings: Array.isArray(e.ai_findings) ? e.ai_findings : [],
     imageUrl: e.image_path || "",
     aiAnalysis: e.ai_analysis || "Analysis pending.",
@@ -457,7 +555,7 @@ export async function changePassword(
 }
 
 /** Request password reset simulated email MFA code */
-export async function requestPasswordReset(email: string): Promise<{ message: string; simulated_mfa_code: string }> {
+export async function requestPasswordReset(email: string): Promise<{ message: string; simulated_mfa_code?: string; transport?: string }> {
   return apiFetch<any>("/api/auth/reset-password/request", {
     method: "POST",
     body: JSON.stringify({ email }),

@@ -10,11 +10,14 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
     },
+    dedupe: ["react", "react-dom", "react/jsx-runtime", "wouter"],
   },
   optimizeDeps: {
     include: [
       "react",
       "react-dom",
+      "react-dom/client",
+      "react/jsx-runtime",
       "wouter",
       "@tanstack/react-query",
       "lucide-react",
@@ -49,6 +52,9 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    hmr: {
+      clientPort: 3000,
+    },
     // Forward /api, /ws, /uploads, /metrics directly to IPv4 127.0.0.1:8000
     proxy: {
       "/api": {

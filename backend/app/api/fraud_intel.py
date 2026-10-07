@@ -56,11 +56,19 @@ class ShellClusterRequest(BaseModel):
 # Endpoints
 # -----------------------------------------------------------------------------
 @router.post("/anomaly-score")
-def evaluate_anomaly_score(req: AnomalyScoreRequest, db: Session = Depends(get_db)):
+def evaluate_anomaly_score(
+    req: AnomalyScoreRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return FraudIntelligenceService.evaluate_cross_project_anomaly(db, req.entity_type, req.entity_id)
 
 @router.post("/ghost-project/detect")
-def detect_ghost_project(req: GhostProjectRequest, db: Session = Depends(get_db)):
+def detect_ghost_project(
+    req: GhostProjectRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     alert = FraudIntelligenceService.run_ghost_project_detector(db, req.project_id)
     if not alert:
         return {"project_id": req.project_id, "is_ghost_project": False, "status": "active_evidence_confirmed"}
@@ -75,17 +83,28 @@ def map_collusion_edge(
     return FraudIntelligenceService.map_collusion_edge(db, req.node_a, req.node_b, req.edge_type, req.weight)
 
 @router.get("/collusion/network")
-def get_collusion_network(db: Session = Depends(get_db)):
+def get_collusion_network(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return FraudIntelligenceService.get_collusion_network(db)
 
 @router.post("/overbilling/check")
-def check_overbilling(req: OverbillingCheckRequest, db: Session = Depends(get_db)):
+def check_overbilling(
+    req: OverbillingCheckRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return FraudIntelligenceService.check_overbilling_anomaly(
         db, req.project_id, req.item_description, req.claimed_cost, req.benchmark_cost
     )
 
 @router.post("/benford/screen")
-def screen_bills_benford(req: BenfordScreenRequest, db: Session = Depends(get_db)):
+def screen_bills_benford(
+    req: BenfordScreenRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return FraudIntelligenceService.screen_bills_benford(
         db, req.project_id, req.contractor_id, req.bill_amounts
     )
@@ -94,7 +113,7 @@ def screen_bills_benford(req: BenfordScreenRequest, db: Session = Depends(get_db
 def detect_split_tenders(
     req: SplitTenderRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.admin])),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
 ):
     return FraudIntelligenceService.detect_split_tenders(
         db, req.parent_scheme, req.detected_tenders, req.total_cost
@@ -104,7 +123,7 @@ def detect_split_tenders(
 def detect_shell_cluster(
     req: ShellClusterRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.admin])),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
 ):
     return FraudIntelligenceService.detect_shell_cluster(
         db, req.cluster_name, req.contractor_ids, req.shared_attributes
@@ -113,6 +132,6 @@ def detect_shell_cluster(
 @router.get("/red-flag-dossier")
 def get_red_flag_dossier(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.admin])),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
 ):
     return FraudIntelligenceService.get_red_flag_dossier(db)

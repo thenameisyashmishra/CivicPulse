@@ -3,9 +3,11 @@ import random
 import time
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import models
+from app.db.models import UserRole
 from app import schemas
 from app.db.database import get_db
 from app.core.deps import get_current_user
@@ -269,7 +271,6 @@ async def request_password_reset(payload: schemas.ResetPasswordRequest, db: Sess
 
     return {
         "message": "Verification code dispatched via secure government mail gateway.",
-        "simulated_mfa_code": code,
         "transport": dispatch_info["transport"],
         "token_signature": dispatch_info["signature"],
         "expires_in_seconds": OTP_TTL_SECONDS,
@@ -297,3 +298,52 @@ async def verify_password_reset(payload: schemas.ResetPasswordVerify, db: Sessio
     db.commit()
 
     return {"message": "Password updated successfully."}
+
+
+class DemoSwitchRequest(BaseModel):
+    role: str
+
+
+@router.post("/demo-switch")
+def demo_switch_role(payload: DemoSwitchRequest, db: Session = Depends(get_db)):
+    """
+    Development/Staging quick persona switcher.
+    Securely returns credentials for pre-seeded personas without exposing passwords in client code.
+    Strictly blocked in production environments.
+    """
+    if settings.app_env == "production" or not settings.allow_demo_personas:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo persona switcher is strictly disabled in production environments.",
+        )
+
+    role_key = payload.role.strip().lower()
+    role_email_map = {
+        "admin": ("admin@civicpulse.gov.in", UserRole.admin),
+        "engineer": ("engineer@civicpulse.gov.in", UserRole.engineer),
+        "pradhan": ("pradhan@civicpulse.gov.in", UserRole.pradhan),
+        "citizen": ("citizen@civicpulse.gov.in", UserRole.citizen),
+    }
+
+    if role_key not in role_email_map:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid demo persona role: '{payload.role}'",
+        )
+
+    target_email, expected_role = role_email_map[role_key]
+    user = db.query(models.User).filter(models.User.email == target_email).first()
+    if not user:
+        user = db.query(models.User).filter(models.User.role == expected_role).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Persona user for role '{role_key}' not found in active database.",
+        )
+
+    token_pair = create_token_pair(subject=user.email, role=user.role.value)
+    return {
+        "user": schemas.UserOut.model_validate(user),
+        **token_pair,
+    }

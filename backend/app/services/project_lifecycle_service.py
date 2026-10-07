@@ -32,6 +32,7 @@ from app.db.models import (
     ModelCodeConductFreeze,
     FinancialReleaseRequest,
     Evidence,
+    EvidenceStatus,
     ApprovalStep,
 )
 
@@ -264,12 +265,12 @@ class ProjectLifecycleService:
     def evaluate_milestone_payment_trigger(
         db: Session, project_id: str, milestone_id: int, tranche_amount: float
     ) -> Dict[str, Any]:
-        # Check evidence and approvals
+        # Check verified evidence and approvals
         evidence = db.execute(
-            select(Evidence).where(Evidence.project_id == project_id)
+            select(Evidence).where(Evidence.project_id == project_id, Evidence.status == EvidenceStatus.verified)
         ).scalars().all()
         avg_quality = (
-            sum(e.quality_score or 0 for e in evidence) / len(evidence)
+            sum(e.quality_score for e in evidence if (e.quality_score or 0) > 0) / len(evidence)
             if evidence
             else 85.0
         )

@@ -11,8 +11,9 @@ from app.core.security import create_access_token
 
 
 @pytest.fixture(scope="module")
-def client():
+def client(admin_token):
     with TestClient(app) as c:
+        c.headers.update({"Authorization": f"Bearer {admin_token}"})
         yield c
 
 

@@ -51,9 +51,9 @@ def _check_pool_exhaustion() -> dict | None:
                 "overflow": pool.overflow(),
                 "utilisation_pct": round(utilisation * 100, 1),
             }
-    except Exception:
-        # StaticPool / NullPool — metrics not available.
-        pass
+    except (AttributeError, TypeError, Exception) as exc:
+        # StaticPool / NullPool — pool exhaustion metrics not available.
+        logger.debug("Pool metrics unavailable on current engine: %s", exc)
     return None
 
 

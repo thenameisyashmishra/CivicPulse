@@ -23,13 +23,15 @@ def _to_project_out(project: models.Project) -> schemas.ProjectOut:
 @router.get("", response_model=list[schemas.ProjectOut])
 def list_projects(
     status_filter: models.ProjectStatus | None = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     _current_user: models.User = Depends(get_current_user),
 ):
     query = db.query(models.Project)
     if status_filter:
         query = query.filter(models.Project.status == status_filter)
-    projects = query.order_by(models.Project.id).all()
+    projects = query.order_by(models.Project.id).offset(offset).limit(limit).all()
     return [_to_project_out(p) for p in projects]
 
 

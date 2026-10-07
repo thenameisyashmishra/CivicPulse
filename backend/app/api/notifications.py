@@ -17,9 +17,11 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel
 
-from app.core.deps import require_roles
+from app.core.deps import get_current_user, require_roles
 from app.core.websockets import ws_manager
+from app.core.security import decode_access_token
 from app.db import models
+from app.db.database import SessionLocal
 from app.db.models import UserRole
 
 logger = logging.getLogger(__name__)
@@ -43,7 +45,32 @@ async def handle_websocket_session(
     project_id: Optional[str] = None,
 ):
     """Core WebSocket event loop handling client messages and subscriptions."""
-    current_user_id = user_id
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+    payload = decode_access_token(token)
+    if payload is None:
+        await websocket.close(code=4003, reason="Invalid or expired token")
+        return
+    token_sub = payload.get("sub")
+    if not token_sub:
+        await websocket.close(code=4003, reason="Invalid token payload")
+        return
+    
+    current_user_id: Optional[int] = None
+    if isinstance(token_sub, int) or (isinstance(token_sub, str) and token_sub.isdigit()):
+        current_user_id = int(token_sub)
+    else:
+        with SessionLocal() as db:
+            db_user = db.query(models.User).filter(models.User.email == str(token_sub)).first()
+            if db_user:
+                current_user_id = db_user.id
+
+    if current_user_id is None:
+        await websocket.close(code=4003, reason="Authenticated user account not found")
+        return
+
     current_project_id = project_id
 
     await ws_manager.connect(websocket, user_id=current_user_id, project_id=current_project_id)
@@ -78,14 +105,6 @@ async def handle_websocket_session(
                     ws_manager.unsubscribe_project(websocket, unsub_pid)
                     await websocket.send_text(
                         json.dumps({"event": "unsubscribed", "projectId": unsub_pid})
-                    )
-            elif action == "identify":
-                ident_uid = msg.get("user_id") or msg.get("userId")
-                if ident_uid:
-                    current_user_id = int(ident_uid)
-                    ws_manager.associate_user(websocket, current_user_id)
-                    await websocket.send_text(
-                        json.dumps({"event": "identified", "userId": current_user_id})
                     )
 
     except WebSocketDisconnect:
@@ -124,7 +143,7 @@ async def websocket_notifications_path(
 
 
 @router.get("/status")
-def get_websocket_status():
+def get_websocket_status(current_user: models.User = Depends(get_current_user)):
     """Returns telemetry on active WebSocket connections and project rooms."""
     return {
         "status": "online",
@@ -133,7 +152,10 @@ def get_websocket_status():
 
 
 @router.get("/history")
-def get_notification_history(limit: int = Query(20, ge=1, le=100)):
+def get_notification_history(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: models.User = Depends(get_current_user),
+):
     """Returns recent notification events for state hydration."""
     return ws_manager.get_recent_history(limit=limit)
 

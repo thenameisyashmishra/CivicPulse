@@ -17,9 +17,33 @@ import {
   Search,
   CheckCircle2,
   Copy,
+  Download,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getToken } from "@/lib/data";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+
+// Real file download helper
+const downloadJSON = (dataObj: any, filename: string) => {
+  const blob = new Blob([JSON.stringify(dataObj, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
 export default function TransparencyPortal() {
   const [activeTab, setActiveTab] = useState<
@@ -65,6 +89,9 @@ export default function TransparencyPortal() {
     name: "",
     queries: "",
   });
+  const [cpgramsReceipt, setCpgramsReceipt] = useState<any>(null);
+  const [rtiReceipt, setRtiReceipt] = useState<any>(null);
+  const [keyCopied, setKeyCopied] = useState(false);
   const [ratingForm, setRatingForm] = useState({
     durability: 5,
     utility: 5,
@@ -83,26 +110,33 @@ export default function TransparencyPortal() {
     try {
       const [projRes, varRes, cpgRes, rtiRes, saRes, laqRes, hmRes, pcRes] =
         await Promise.all([
-          fetch("/api/transparency/public/projects").then((r) => r.json()),
-          fetch("/api/transparency/budget-variance").then((r) => r.json()),
-          fetch("/api/transparency/cpgrams/list").then((r) => r.json()),
-          fetch("/api/transparency/rti/requests").then((r) => r.json()),
-          fetch("/api/transparency/social-audit").then((r) => r.json()),
-          fetch("/api/transparency/laq/list").then((r) => r.json()),
-          fetch("/api/transparency/heatmap/districts").then((r) => r.json()),
-          fetch("/api/transparency/pre-construction").then((r) => r.json()),
+          fetch("/api/transparency/public/projects").then((r) => (r.ok ? r.json() : { projects: [] })),
+          fetch("/api/transparency/budget-variance").then((r) => (r.ok ? r.json() : null)),
+          fetch("/api/transparency/cpgrams/list").then((r) => (r.ok ? r.json() : [])),
+          fetch("/api/transparency/rti/requests").then((r) => (r.ok ? r.json() : [])),
+          fetch("/api/transparency/social-audit").then((r) => (r.ok ? r.json() : [])),
+          fetch("/api/transparency/laq/list").then((r) => (r.ok ? r.json() : [])),
+          fetch("/api/transparency/heatmap/districts").then((r) => (r.ok ? r.json() : [])),
+          fetch("/api/transparency/pre-construction").then((r) => (r.ok ? r.json() : [])),
         ]);
 
-      setProjects(projRes.projects || []);
-      setVarianceData(varRes);
-      setCpgramsList(cpgRes || []);
-      setRtiList(rtiRes || []);
-      setSocialAudits(saRes || []);
-      setLaqList(laqRes || []);
-      setHeatmapData(hmRes || []);
-      setPreConstruction(pcRes || []);
+      setProjects(Array.isArray(projRes?.projects) ? projRes.projects : []);
+      if (varRes && !varRes.detail) setVarianceData(varRes);
+      setCpgramsList(Array.isArray(cpgRes) ? cpgRes : []);
+      setRtiList(Array.isArray(rtiRes) ? rtiRes : []);
+      setSocialAudits(Array.isArray(saRes) ? saRes : []);
+      setLaqList(Array.isArray(laqRes) ? laqRes : []);
+      setHeatmapData(Array.isArray(hmRes) ? hmRes : []);
+      setPreConstruction(Array.isArray(pcRes) ? pcRes : []);
     } catch (e) {
       console.error(e);
+      setProjects([]);
+      setCpgramsList([]);
+      setRtiList([]);
+      setSocialAudits([]);
+      setLaqList([]);
+      setHeatmapData([]);
+      setPreConstruction([]);
     }
   };
 
@@ -113,10 +147,11 @@ export default function TransparencyPortal() {
   const loadOCDS = async () => {
     try {
       const res = await fetch("/api/transparency/ocds/releases");
+      if (!res.ok) throw new Error("Failed to load OCDS data");
       const data = await res.json();
       setOcdsData(data);
     } catch (e: any) {
-      toast.error("Failed to load OCDS data");
+      toast.error(e.message || "Failed to load OCDS data");
     }
   };
 
@@ -157,6 +192,11 @@ export default function TransparencyPortal() {
         }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `Failed to file grievance (HTTP ${res.status})`);
+      }
+      setCpgramsReceipt(data);
+      downloadJSON(data, `CPGRAMS_Grievance_Docket_${(data.registration_number || "REG").replace(/[\/\\:]/g, "_")}.json`);
       toast.success(`Grievance filed! Docket: ${data.registration_number}`);
       setCpgramsForm({ name: "", contact: "", category: "Drainage Block & Quality", description: "" });
       fetchData();
@@ -178,6 +218,11 @@ export default function TransparencyPortal() {
         }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `Failed to submit RTI (HTTP ${res.status})`);
+      }
+      setRtiReceipt(data);
+      downloadJSON(data, `RTI_Application_Receipt_${(data.rti_number || "RTI").replace(/[\/\\:]/g, "_")}.json`);
       toast.success(`RTI Filed! Tracking No: ${data.rti_number}`);
       setRtiForm({ name: "", queries: "" });
       fetchData();
@@ -205,7 +250,10 @@ export default function TransparencyPortal() {
           ...ratingForm,
         }),
       });
-      if (!res.ok) throw new Error("Failed to submit rating");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to submit rating");
+      }
       toast.success("Citizen rating recorded on public ledger!");
       loadReviews(selectedProjectId);
       setRatingForm({ durability: 5, utility: 5, speed: 4, title: "", comment: "" });
@@ -223,6 +271,9 @@ export default function TransparencyPortal() {
         body: JSON.stringify(devKeyForm),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `Failed to generate API key (HTTP ${res.status})`);
+      }
       setGeneratedApiKey(data.api_key);
       toast.success("API key generated!");
     } catch (e: any) {
@@ -232,7 +283,7 @@ export default function TransparencyPortal() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 max-w-7xl mx-auto pb-16">
+      <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-16">
         {/* Banner */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-card/80 to-cyan-950/20 border border-border shadow-lg">
           <div>
@@ -259,7 +310,11 @@ export default function TransparencyPortal() {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto pb-2 border-b border-border text-xs scrollbar-thin">
+        <div
+          role="tablist"
+          aria-label="Transparency Portal Modules"
+          className="flex items-center gap-1 overflow-x-auto pb-2 border-b border-border text-xs scrollbar-thin"
+        >
           {[
             { id: "public_projects", label: "Public Discovery", icon: Search },
             { id: "ocds", label: "OCDS 1.1 Schema", icon: FileCode },
@@ -280,6 +335,11 @@ export default function TransparencyPortal() {
             return (
               <button
                 key={tab.id}
+                role="tab"
+                id={`trans-tab-${tab.id}`}
+                aria-selected={active}
+                aria-controls={`trans-panel-${tab.id}`}
+                tabIndex={active ? 0 : -1}
                 onClick={() => {
                   setActiveTab(tab.id as any);
                   if (tab.id === "ocds" && !ocdsData) loadOCDS();
@@ -301,7 +361,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 1: Public Discovery */}
         {activeTab === "public_projects" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="trans-panel-public_projects"
+            aria-labelledby="trans-tab-public_projects"
+            className="space-y-4"
+          >
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h3 className="text-base font-semibold">Public Project Explorer (Zero Login Required)</h3>
@@ -389,7 +454,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 2: OCDS 1.1 Schema */}
         {activeTab === "ocds" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="trans-panel-ocds"
+            aria-labelledby="trans-tab-ocds"
+            className="space-y-4"
+          >
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-base font-semibold">Open Contracting Data Standard (OCDS 1.1) API</h3>
@@ -397,16 +467,35 @@ export default function TransparencyPortal() {
                   Conforms with Open Contracting Partnership standards for global civic-tech interoperability.
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(JSON.stringify(ocdsData, null, 2));
-                  toast.success("OCDS JSON copied to clipboard!");
-                }}
-                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-accent hover:bg-accent/80 flex items-center gap-2"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                Copy OCDS Release
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(JSON.stringify(ocdsData, null, 2));
+                    toast.success("OCDS JSON copied to clipboard!");
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-accent hover:bg-accent/80 flex items-center gap-2"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy OCDS Release
+                </button>
+                <button
+                  onClick={() => {
+                    if (ocdsData) {
+                      downloadJSON(
+                        ocdsData,
+                        `OCDS_1.1_Release_Package_${new Date().toISOString().slice(0, 10)}.json`
+                      );
+                      toast.success("OCDS Release Package downloaded to browser!");
+                    } else {
+                      toast.error("Please wait for OCDS data to load");
+                    }
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white flex items-center gap-2"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download OCDS JSON
+                </button>
+              </div>
             </div>
 
             <pre className="p-4 rounded-xl border border-border bg-background text-xs font-mono max-h-[500px] overflow-y-auto text-muted-foreground">
@@ -417,7 +506,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 3: Budget-vs-Spend Variance */}
         {activeTab === "budget_variance" && varianceData && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="trans-panel-budget_variance"
+            aria-labelledby="trans-tab-budget_variance"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">Real-Time Macro Budget vs. Spend Variance</h3>
               <p className="text-xs text-muted-foreground">
@@ -498,7 +592,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 4: CPGRAMS */}
         {activeTab === "cpgrams" && (
-          <div className="grid md:grid-cols-2 gap-6">
+          <div
+            role="tabpanel"
+            id="trans-panel-cpgrams"
+            aria-labelledby="trans-tab-cpgrams"
+            className="grid md:grid-cols-2 gap-6"
+          >
             <div className="p-5 rounded-xl border border-border bg-card/40 space-y-4">
               <div>
                 <h3 className="text-sm font-bold flex items-center gap-2">
@@ -573,7 +672,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 5: RTI 30-Day Tracker */}
         {activeTab === "rti" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="trans-panel-rti"
+            aria-labelledby="trans-tab-rti"
+            className="space-y-4"
+          >
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-base font-semibold">Right to Information (RTI Act 2005) Statutory Tracker</h3>
@@ -673,7 +777,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 6: MGNREGA Social Audits */}
         {activeTab === "social_audit" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="trans-panel-social_audit"
+            aria-labelledby="trans-tab-social_audit"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">MGNREGA-Style Social Audit Register</h3>
               <p className="text-xs text-muted-foreground">
@@ -710,7 +819,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 7: LAQ Dossier */}
         {activeTab === "laq" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="trans-panel-laq"
+            aria-labelledby="trans-tab-laq"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">Legislative Assembly Questions (LAQ) Dossier</h3>
               <p className="text-xs text-muted-foreground">
@@ -748,7 +862,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 8: Citizen Star Ratings */}
         {activeTab === "star_ratings" && (
-          <div className="grid md:grid-cols-2 gap-6">
+          <div
+            role="tabpanel"
+            id="trans-panel-star_ratings"
+            aria-labelledby="trans-tab-star_ratings"
+            className="grid md:grid-cols-2 gap-6"
+          >
             <div className="p-5 rounded-xl border border-border bg-card/40 space-y-4">
               <div>
                 <h3 className="text-sm font-bold flex items-center gap-2">
@@ -866,7 +985,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 9: Press Releases */}
         {activeTab === "press_releases" && pressRelease && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="trans-panel-press_releases"
+            aria-labelledby="trans-tab-press_releases"
+            className="space-y-4"
+          >
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-base font-semibold">Automated Bilingual Press Release Generator</h3>
@@ -897,7 +1021,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 10: Third-Party Independent Audits */}
         {activeTab === "third_party" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="trans-panel-third_party"
+            aria-labelledby="trans-tab-third_party"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">Third-Party Independent Audit Agency Reports</h3>
               <p className="text-xs text-muted-foreground">
@@ -927,7 +1056,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 11: District Heatmap */}
         {activeTab === "heatmap" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="trans-panel-heatmap"
+            aria-labelledby="trans-tab-heatmap"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">Public Quality & Corruption Risk Heatmap by District</h3>
               <p className="text-xs text-muted-foreground">
@@ -964,7 +1098,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 12: Open Data Developer Portal */}
         {activeTab === "developer" && (
-          <div className="grid md:grid-cols-2 gap-6">
+          <div
+            role="tabpanel"
+            id="trans-panel-developer"
+            aria-labelledby="trans-tab-developer"
+            className="grid md:grid-cols-2 gap-6"
+          >
             <div className="p-5 rounded-xl border border-border bg-card/40 space-y-4">
               <div>
                 <h3 className="text-sm font-bold flex items-center gap-2">
@@ -1006,9 +1145,31 @@ export default function TransparencyPortal() {
               </form>
 
               {generatedApiKey && (
-                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
-                  <div className="font-bold text-emerald-400">Save Your Secret API Key:</div>
-                  <div className="font-mono text-xs font-black text-foreground mt-1 break-all">
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-emerald-400">Save Your Secret API Key:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedApiKey);
+                        setKeyCopied(true);
+                        toast.success("API Key copied to clipboard!");
+                        setTimeout(() => setKeyCopied(false), 3000);
+                      }}
+                      className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-semibold flex items-center gap-1 transition"
+                    >
+                      {keyCopied ? (
+                        <>
+                          <Check className="h-3 w-3" /> Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" /> Copy Key
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="font-mono text-xs font-black text-foreground bg-background/80 p-2 rounded border border-border break-all">
                     {generatedApiKey}
                   </div>
                 </div>
@@ -1036,7 +1197,12 @@ export default function TransparencyPortal() {
 
         {/* Tab 13: Pre-Construction Disclosure */}
         {activeTab === "pre_construction" && (
-          <div className="space-y-4">
+          <div
+            role="tabpanel"
+            id="trans-panel-pre_construction"
+            aria-labelledby="trans-tab-pre_construction"
+            className="space-y-4"
+          >
             <div>
               <h3 className="text-base font-semibold">"Right to Know Before It's Built" Proactive Disclosure</h3>
               <p className="text-xs text-muted-foreground">
@@ -1080,6 +1246,244 @@ export default function TransparencyPortal() {
             </div>
           </div>
         )}
+        {/* CPGRAMS Docket Receipt Modal */}
+        <Dialog
+          open={Boolean(cpgramsReceipt)}
+          onOpenChange={(open) => {
+            if (!open) setCpgramsReceipt(null);
+          }}
+        >
+          <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400">
+                  <MessageSquareWarning className="h-5 w-5" />
+                </span>
+                <div>
+                  <DialogTitle className="text-base font-bold">
+                    Official CPGRAMS Grievance Receipt
+                  </DialogTitle>
+                  <DialogDescription className="text-xs">
+                    Government of India DARPG Portal v7.0 Integration
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            {cpgramsReceipt && (
+              <div className="space-y-4 text-xs pt-2">
+                <div className="p-4 rounded-xl border border-cyan-500/30 bg-cyan-950/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-[11px] font-semibold">
+                      Statutory Registration Docket
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-400">
+                      {cpgramsReceipt.status || "REGISTERED"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between bg-background/80 p-2.5 rounded-lg border border-border">
+                    <span className="font-mono text-sm font-bold text-cyan-400">
+                      {cpgramsReceipt.registration_number}
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(cpgramsReceipt.registration_number);
+                        toast.success("Docket number copied to clipboard!");
+                      }}
+                      className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                      title="Copy Docket Number"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 p-3 rounded-xl border border-border bg-card/40">
+                  <div>
+                    <span className="text-[10px] text-muted-foreground">Complainant</span>
+                    <div className="font-semibold text-foreground mt-0.5">
+                      {cpgramsReceipt.complainant_name}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground">Contact</span>
+                    <div className="font-mono text-muted-foreground mt-0.5">
+                      {cpgramsReceipt.complainant_contact}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground">Category</span>
+                    <div className="font-semibold text-cyan-400 mt-0.5">
+                      {cpgramsReceipt.category}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground">Project Linked</span>
+                    <div className="font-mono font-semibold mt-0.5">
+                      {cpgramsReceipt.project_id}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl border border-border bg-accent/20 space-y-1">
+                  <span className="font-semibold text-[11px] text-muted-foreground">
+                    DARPG Action Note:
+                  </span>
+                  <p className="text-emerald-400 text-xs">
+                    {cpgramsReceipt.cpgrams_action_note ||
+                      "Complaint successfully ingested and mapped to DARPG CPGRAMS Portal v7.0."}
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                  <button
+                    onClick={() => {
+                      downloadJSON(
+                        cpgramsReceipt,
+                        `CPGRAMS_Grievance_Docket_${(
+                          cpgramsReceipt.registration_number || "REG"
+                        ).replace(/[\/\\:]/g, "_")}.json`
+                      );
+                      toast.success("Docket JSON re-downloaded!");
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold flex items-center gap-1.5 text-xs"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download Docket Receipt
+                  </button>
+                  <button
+                    onClick={() => setCpgramsReceipt(null)}
+                    className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent/80 font-semibold text-xs"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* RTI Application Receipt Modal */}
+        <Dialog
+          open={Boolean(rtiReceipt)}
+          onOpenChange={(open) => {
+            if (!open) setRtiReceipt(null);
+          }}
+        >
+          <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
+                  <Clock className="h-5 w-5" />
+                </span>
+                <div>
+                  <DialogTitle className="text-base font-bold">
+                    Statutory RTI Filing Receipt
+                  </DialogTitle>
+                  <DialogDescription className="text-xs">
+                    Right to Information Act 2005 · Section 6(1) Enforced Intake
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            {rtiReceipt && (
+              <div className="space-y-4 text-xs pt-2">
+                <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-950/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-[11px] font-semibold">
+                      Official RTI Tracking Number
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-500/20 text-amber-400">
+                      30-DAY STATUTORY CLOCK ACTIVE
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between bg-background/80 p-2.5 rounded-lg border border-border">
+                    <span className="font-mono text-sm font-bold text-amber-400">
+                      {rtiReceipt.rti_number}
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(rtiReceipt.rti_number);
+                        toast.success("RTI Tracking number copied!");
+                      }}
+                      className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                      title="Copy RTI Number"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 p-3 rounded-xl border border-border bg-card/40">
+                  <div>
+                    <span className="text-[10px] text-muted-foreground">Applicant Name</span>
+                    <div className="font-semibold text-foreground mt-0.5">
+                      {rtiReceipt.applicant_name}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground">Project Linked</span>
+                    <div className="font-mono font-semibold mt-0.5">
+                      {rtiReceipt.project_id}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground">Statutory Deadline</span>
+                    <div className="font-mono font-bold text-emerald-400 mt-0.5">
+                      {rtiReceipt.statutory_deadline
+                        ? new Date(rtiReceipt.statutory_deadline).toLocaleDateString()
+                        : "30 Days from Filing"}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground">
+                      First Appeal Breach Trigger
+                    </span>
+                    <div className="font-mono text-muted-foreground mt-0.5">
+                      Section 19(1) Auto-unlock
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl border border-border bg-accent/20 space-y-1">
+                  <span className="font-semibold text-[11px] text-muted-foreground">
+                    Questions / Information Requested:
+                  </span>
+                  <ul className="list-disc pl-4 space-y-1 text-foreground/90 text-xs">
+                    {rtiReceipt.queries?.map((q: string, i: number) => (
+                      <li key={i}>{q}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                  <button
+                    onClick={() => {
+                      downloadJSON(
+                        rtiReceipt,
+                        `RTI_Application_Receipt_${(
+                          rtiReceipt.rti_number || "RTI"
+                        ).replace(/[\/\\:]/g, "_")}.json`
+                      );
+                      toast.success("RTI Receipt re-downloaded!");
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold flex items-center gap-1.5 text-xs"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download RTI Receipt
+                  </button>
+                  <button
+                    onClick={() => setRtiReceipt(null)}
+                    className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent/80 font-semibold text-xs"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

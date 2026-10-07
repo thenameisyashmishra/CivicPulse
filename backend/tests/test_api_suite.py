@@ -22,6 +22,14 @@ from app.core.security import hash_password
 client = TestClient(app)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_database():
+    """Ensure database has fresh seeded data."""
+    engine.dispose()
+    Base.metadata.create_all(bind=engine)
+    seed()
+
+
 def get_token(email: str = "admin@civicpulse.gov.in", password: str = "Admin@1234") -> str:
     response = client.post("/api/auth/login", data={"username": email, "password": password})
     assert response.status_code == 200
@@ -120,8 +128,13 @@ class TestAuthentication:
         # 1. Request reset code
         req_res = client.post("/api/auth/reset-password/request", json={"email": "engineer@civicpulse.gov.in"})
         assert req_res.status_code == 200
-        code = req_res.json()["simulated_mfa_code"]
-        assert len(code) == 6
+        assert "simulated_mfa_code" not in req_res.json()
+        assert "message" in req_res.json()
+
+        # Retrieve the generated code directly from the server's verification cache
+        from app.api.auth import _RESET_CODES_MEM
+        code = _RESET_CODES_MEM.get("engineer@civicpulse.gov.in")
+        assert code and len(code) == 6
 
         # 2. Verify with wrong code
         bad_verify = client.post("/api/auth/reset-password/verify", json={"email": "engineer@civicpulse.gov.in", "mfa_code": "000000", "new_password": "ResetPassword@123"})

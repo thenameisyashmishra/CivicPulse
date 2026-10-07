@@ -32,7 +32,13 @@ if settings.database_url.startswith("sqlite"):
         if _db_path and _db_path != ":memory:":
             from pathlib import Path
             Path(_db_path).parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(settings.database_url, connect_args=_sync_connect_args)
+    engine = create_engine(
+        settings.database_url,
+        connect_args=_sync_connect_args,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_timeout=settings.db_pool_timeout,
+    )
 else:
     engine = create_engine(
         settings.database_url,

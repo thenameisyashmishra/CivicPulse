@@ -93,7 +93,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         limit = settings.rate_limit_requests
         window = settings.rate_limit_window_seconds
 
-        is_limited = _is_rate_limited_redis(client_ip, limit, window)
+        import anyio
+        is_limited = await anyio.to_thread.run_sync(_is_rate_limited_redis, client_ip, limit, window)
 
         if is_limited:
             logger.warning(f"Rate limit exceeded for client: {client_ip} on path {path}")

@@ -5,12 +5,14 @@
  */
 import DashboardLayout from "@/components/DashboardLayout";
 import { useState } from "react";
-import { Bell, Bot, Database, CheckCircle, Fingerprint, Lock, HelpCircle, Eye, EyeOff, KeyRound } from "lucide-react";
+import { Bell, Bot, Database, CheckCircle, Fingerprint, Lock, HelpCircle, Eye, EyeOff, KeyRound, Palette, Sun, Moon } from "lucide-react";
 import { toast } from "sonner";
 import { getSavedUser, verifyAadhaar, changePassword, requestPasswordReset, verifyPasswordReset } from "@/lib/data";
+import { useTheme } from "@/contexts/ThemeContext";
 
 export default function Settings() {
   const [user, setUser] = useState(getSavedUser());
+  const { theme, setTheme } = useTheme();
 
   // Notifications
   const [notifications, setNotifications] = useState({
@@ -84,9 +86,14 @@ export default function Settings() {
     setResettingPassword(true);
     try {
       const res = await requestPasswordReset(resetEmail);
-      setSimulatedResetCode(res.simulated_mfa_code);
+      if (res.simulated_mfa_code) {
+        setSimulatedResetCode(res.simulated_mfa_code);
+        toast.success("MFA code dispatched to mail logs!");
+      } else {
+        setSimulatedResetCode("");
+        toast.success(res.message || "Verification code dispatched via secure mail gateway.");
+      }
       setResetStep(2);
-      toast.success("Simulated MFA code dispatched to mail logs!");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Reset request failed");
     } finally {
@@ -230,6 +237,99 @@ export default function Settings() {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Appearance & Theme */}
+          <div className="bg-card border border-border">
+            <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Palette size={14} className="text-primary" />
+                <span className="text-xs font-medium text-muted-foreground uppercase" style={{ fontFamily: "var(--font-mono)" }}>
+                  APPEARANCE & THEME
+                </span>
+              </div>
+              <span className="text-[10px] text-muted-foreground uppercase font-mono">
+                CURRENT: {theme.toUpperCase()}
+              </span>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase block mb-2" style={{ fontFamily: "var(--font-mono)" }}>
+                  Color Theme Mode
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Light Theme Card */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTheme("light");
+                      toast.success("Interface theme updated to Light Mode");
+                    }}
+                    className={`p-4 border rounded-md text-left transition-all cursor-pointer relative ${
+                      theme === "light"
+                        ? "border-primary bg-primary/10 ring-1 ring-primary shadow-sm"
+                        : "border-border bg-muted/10 hover:border-border/80 hover:bg-muted/20"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500">
+                          <Sun size={16} />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-foreground">Light Theme</div>
+                          <div className="text-[10px] text-muted-foreground">High-contrast GovTech daylight mode</div>
+                        </div>
+                      </div>
+                      {theme === "light" && (
+                        <span className="w-2 h-2 rounded-full bg-primary" />
+                      )}
+                    </div>
+                    {/* Visual mini-swatch */}
+                    <div className="h-6 rounded bg-slate-100 border border-slate-300 p-1 flex items-center gap-1.5 overflow-hidden">
+                      <div className="w-2.5 h-2.5 rounded-full bg-cyan-700" />
+                      <div className="h-1.5 w-12 rounded bg-slate-300" />
+                      <div className="h-1.5 w-8 rounded bg-slate-200" />
+                    </div>
+                  </button>
+
+                  {/* Dark Theme Card */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTheme("dark");
+                      toast.success("Interface theme updated to Dark Mode");
+                    }}
+                    className={`p-4 border rounded-md text-left transition-all cursor-pointer relative ${
+                      theme === "dark"
+                        ? "border-primary bg-primary/10 ring-1 ring-primary shadow-sm"
+                        : "border-border bg-muted/10 hover:border-border/80 hover:bg-muted/20"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                          <Moon size={16} />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-foreground">Dark Theme</div>
+                          <div className="text-[10px] text-muted-foreground">Cyber command center neon mode</div>
+                        </div>
+                      </div>
+                      {theme === "dark" && (
+                        <span className="w-2 h-2 rounded-full bg-primary" />
+                      )}
+                    </div>
+                    {/* Visual mini-swatch */}
+                    <div className="h-6 rounded bg-slate-950 border border-slate-800 p-1 flex items-center gap-1.5 overflow-hidden">
+                      <div className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
+                      <div className="h-1.5 w-12 rounded bg-slate-800" />
+                      <div className="h-1.5 w-8 rounded bg-slate-900" />
+                    </div>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 

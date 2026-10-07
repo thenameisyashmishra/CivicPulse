@@ -2,7 +2,10 @@ import asyncio
 from contextlib import asynccontextmanager
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -29,13 +32,11 @@ async def lifespan(app: FastAPI):
     # Register running event loop for safe multi-threaded WebSocket broadcasts & Redis pub/sub
     try:
         ws_manager.set_event_loop(asyncio.get_running_loop())
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Could not attach running event loop to ws_manager: %s", exc)
 
-    # Only auto-create tables on SQLite (local dev). On PostgreSQL,
-    # Alembic migrations manage the schema exclusively (fixes PERF-01).
-    if settings.database_url.startswith("sqlite"):
-        Base.metadata.create_all(bind=engine)
+    # Ensure all tables are created across all environments (SQLite and PostgreSQL)
+    Base.metadata.create_all(bind=engine)
     settings.upload_path.mkdir(parents=True, exist_ok=True)
 
     # --- Setup Distributed Telemetry (if enabled) ---
@@ -102,25 +103,95 @@ app.add_middleware(RateLimitMiddleware)
 app.add_middleware(DBPerformanceMiddleware)
 
 @app.middleware("http")
-async def add_security_headers(request, call_next):
+async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
+    
+    # Do not break Swagger UI / ReDoc documentation assets
+    if request.url.path in ("/docs", "/redoc", "/openapi.json"):
+        return response
+
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
         "font-src 'self' data: https://fonts.gstatic.com; "
         "img-src 'self' data: blob: https:; "
-        "connect-src 'self' ws: wss: http: https:; "
+        "connect-src 'self' ws: wss:; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
         "frame-ancestors 'none';"
     )
-    response.headers["Permissions-Policy"] = "geolocation=(self), camera=(self), microphone=()"
+    response.headers["Permissions-Policy"] = "geolocation=(self), camera=(self), microphone=(self)"
     if settings.app_env == "production":
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     return response
+
+
+# --- Global Enterprise RFC 7807 Exception Handlers ---
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "type": "https://civicpulse.gov.in/errors/validation-error",
+            "title": "Validation Error",
+            "status": 422,
+            "detail": exc.errors(),
+            "instance": request.url.path,
+        },
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "type": f"https://civicpulse.gov.in/errors/http-{exc.status_code}",
+            "title": str(exc.detail) if isinstance(exc.detail, str) else "HTTP Error",
+            "status": exc.status_code,
+            "detail": exc.detail,
+            "instance": request.url.path,
+        },
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled server exception at %s: %s", request.url.path, exc)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "type": "https://civicpulse.gov.in/errors/internal-server-error",
+            "title": "Internal Server Error",
+            "status": 500,
+            "detail": "An internal server error occurred. Telemetry recorded for investigation.",
+            "instance": request.url.path,
+        },
+    )
+
+
+@app.get("/", include_in_schema=False)
+def root(request: Request):
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return RedirectResponse(url="/docs")
+    return {
+        "app": settings.app_name,
+        "status": "online",
+        "docs": "/docs",
+        "redoc": "/redoc",
+        "health": "/api/health",
+        "version": "1.0.0",
+    }
 
 app.mount("/uploads", StaticFiles(directory=str(settings.upload_path)), name="uploads")
 

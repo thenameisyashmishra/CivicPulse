@@ -15,27 +15,51 @@ import {
   CheckCircle2,
   Info,
   X,
+  Camera,
+  Smartphone,
+  Sun,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Menu,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
-import { getSavedUser, clearToken } from "@/lib/data";
+import { getSavedUser, clearToken, saveUser, DEMO_PERSONAS } from "@/lib/data";
+import { useTheme } from "@/contexts/ThemeContext";
+import { useSidebar } from "@/contexts/SidebarContext";
+import { toast } from "sonner";
 import CommandMenu from "./CommandMenu";
+import MobileConnectModal from "./MobileConnectModal";
 import {
   useWebSocketNotifications,
   formatRelativeTime,
   NotificationItem,
 } from "@/hooks/useWebSocketNotifications";
+import { useOfflineQueue } from "@/lib/offlineSync";
 
 export default function Header() {
   const [showAlerts, setShowAlerts] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [mobileModalOpen, setMobileModalOpen] = useState(false);
   const [, navigate] = useLocation();
+  const { theme, toggleTheme } = useTheme();
+  const { isCollapsed, toggleSidebar, toggleMobileSidebar } = useSidebar();
 
   const alertsRef = useRef<HTMLDivElement>(null);
   const userDropdownRef = useRef<HTMLDivElement>(null);
 
-  const user = getSavedUser();
+  const [user, setUser] = useState(getSavedUser());
+  const { isSimulatedOffline, toggleSimulatedOffline } = useOfflineQueue();
+
+  useEffect(() => {
+    const handleUserUpdate = () => {
+      setUser(getSavedUser());
+    };
+    window.addEventListener("cp_user_updated", handleUserUpdate);
+    return () => window.removeEventListener("cp_user_updated", handleUserUpdate);
+  }, []);
   const {
     notifications,
     unreadCount,
@@ -89,8 +113,32 @@ export default function Header() {
 
   return (
     <header className="h-14 bg-card/75 backdrop-blur-md border-b border-border flex items-center justify-between px-6 shrink-0 relative z-40">
-      {/* Search Trigger */}
-      <div className="flex items-center gap-3">
+      {/* Search Trigger & Sidebar Toggle */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          title={isCollapsed ? "Expand Sidebar (Ctrl+B)" : "Collapse Sidebar (Ctrl+B)"}
+          aria-label={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          className="hidden md:flex items-center justify-center p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors cursor-pointer"
+        >
+          {isCollapsed ? (
+            <PanelLeftOpen size={18} className="text-primary" />
+          ) : (
+            <PanelLeftClose size={18} />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={toggleMobileSidebar}
+          title="Toggle Navigation Menu"
+          aria-label="Toggle Navigation Menu"
+          className="flex md:hidden items-center justify-center p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors cursor-pointer"
+        >
+          <Menu size={18} />
+        </button>
+
         <button
           type="button"
           onClick={() => setCommandOpen(true)}
@@ -119,7 +167,63 @@ export default function Header() {
       <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
 
       {/* Right side */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        {/* Quick Road Camera Button */}
+        <button
+          type="button"
+          onClick={() => navigate("/engineering")}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary dark:text-cyan-400 border border-primary/30 dark:border-cyan-500/30 text-xs font-bold transition shadow-xs cursor-pointer group"
+          title="Open Road Pothole Live Camera AI Scanner"
+        >
+          <Camera size={14} className="group-hover:scale-110 transition-transform text-primary dark:text-cyan-400 animate-pulse" />
+          <span className="hidden sm:inline">Road Camera AI</span>
+        </button>
+
+        {/* Mobile LAN Phone Connect Button */}
+        <button
+          type="button"
+          onClick={() => setMobileModalOpen(true)}
+          className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card hover:bg-accent text-foreground border border-border text-xs font-semibold transition cursor-pointer shadow-xs"
+          title="Connect mobile phone over local Wi-Fi for live field testing"
+        >
+          <Smartphone size={14} className="text-primary dark:text-cyan-400" />
+          <span className="hidden lg:inline">Connect Mobile</span>
+        </button>
+
+        {/* Mobile QR Modal */}
+        <MobileConnectModal
+          isOpen={mobileModalOpen}
+          onClose={() => setMobileModalOpen(false)}
+        />
+
+        {/* Theme Toggle Button (Light/Dark Mode) */}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors rounded-lg border border-border/60 hover:border-primary/40 cursor-pointer shadow-xs flex items-center justify-center"
+          title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          aria-label={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+        >
+          {theme === "dark" ? (
+            <Sun size={16} className="text-amber-400 hover:rotate-45 transition-transform" />
+          ) : (
+            <Moon size={16} className="text-cyan-600 hover:-rotate-12 transition-transform" />
+          )}
+        </button>
+
+        {/* Offline Simulation Active Indicator Badge */}
+        {isSimulatedOffline && (
+          <button
+            type="button"
+            onClick={toggleSimulatedOffline}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-bold animate-pulse cursor-pointer shadow-xs"
+            title="Click to deactivate Offline Field Simulation"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span>OFFLINE SIM</span>
+          </button>
+        )}
+
         {/* Live Notification Center */}
         <div className="relative" ref={alertsRef}>
           <button
@@ -259,22 +363,82 @@ export default function Header() {
           </button>
 
           {showDropdown && (
-            <div className="absolute right-0 top-11 w-48 bg-card/95 backdrop-blur-lg border border-border rounded-lg shadow-xl z-50 py-1 overflow-hidden premium-glow animate-fade-in">
+            <div className="absolute right-0 top-11 w-64 bg-card/95 backdrop-blur-lg border border-border rounded-lg shadow-xl z-50 py-1 overflow-hidden premium-glow animate-fade-in">
               <div className="px-4 py-3 border-b border-border text-xs bg-muted/20">
                 <p className="text-muted-foreground font-bold tracking-widest text-[9px]" style={{ fontFamily: "var(--font-mono)" }}>SIGNED IN AS</p>
                 <p className="text-foreground truncate mt-0.5 font-medium">{user?.email || "guest@civicpulse.gov.in"}</p>
-                <div className="mt-2.5 pt-2.5 border-t border-border/40 flex items-center gap-1.5">
+                <div className="mt-2 pt-2 border-t border-border/40 flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-primary font-mono">{user?.role || "CITIZEN"}</span>
                   {user?.aadhaar_verified ? (
                     <span className="text-[9px] text-emerald-400 font-bold tracking-widest flex items-center gap-1" style={{ fontFamily: "var(--font-mono)" }}>
                       ✓ AADHAAR VERIFIED
                     </span>
                   ) : (
                     <span className="text-[9px] text-rose-400 font-bold tracking-widest flex items-center gap-1" style={{ fontFamily: "var(--font-mono)" }}>
-                      ⚠ AADHAAR UNVERIFIED
+                      ⚠ UNVERIFIED
                     </span>
                   )}
                 </div>
               </div>
+
+              {/* Persona Switcher for Evaluation */}
+              <div className="px-3 py-2 border-b border-border bg-muted/10">
+                <p className="text-muted-foreground font-bold tracking-widest text-[9px] px-1 mb-1.5" style={{ fontFamily: "var(--font-mono)" }}>
+                  SWITCH ROLE PERSONA (DEMO)
+                </p>
+                <div className="space-y-0.5">
+                  {DEMO_PERSONAS.map((p) => {
+                    const isCurrent = user?.role === p.role;
+                    return (
+                      <button
+                        key={p.role}
+                        type="button"
+                        onClick={() => {
+                          saveUser(p);
+                          toast.success(`Active persona: ${p.label}`);
+                        }}
+                        className={`w-full text-left px-2 py-1.5 rounded-md text-[11px] font-medium flex items-center justify-between transition-colors cursor-pointer ${
+                          isCurrent
+                            ? "bg-primary/15 text-primary font-bold border border-primary/30"
+                            : "hover:bg-accent/60 text-foreground"
+                        }`}
+                      >
+                        <span className="truncate">{p.name}</span>
+                        <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-muted uppercase text-muted-foreground font-bold shrink-0 ml-1.5">
+                          {p.role}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Field Mode Offline Simulation Toggle */}
+              <div className="px-3 py-2 border-b border-border bg-muted/10">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-muted-foreground font-bold tracking-widest text-[9px]" style={{ fontFamily: "var(--font-mono)" }}>
+                      OFFLINE FIELD SIMULATOR
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">Test rural queue & auto-sync</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggleSimulatedOffline();
+                      setShowDropdown(false);
+                    }}
+                    className={`px-2 py-1 rounded text-[10px] font-bold border transition cursor-pointer ${
+                      isSimulatedOffline
+                        ? "bg-amber-500/20 text-amber-300 border-amber-500/50"
+                        : "bg-muted text-muted-foreground border-border hover:text-foreground"
+                    }`}
+                  >
+                    {isSimulatedOffline ? "ACTIVE (OFFLINE)" : "SIMULATE"}
+                  </button>
+                </div>
+              </div>
+
               <button
                 onClick={handleLogout}
                 className="w-full text-left px-4 py-2.5 text-xs text-rose-400 hover:bg-rose-500/10 flex items-center gap-2.5 transition-colors font-semibold tracking-wider cursor-pointer"

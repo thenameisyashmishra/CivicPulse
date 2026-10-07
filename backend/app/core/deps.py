@@ -38,6 +38,25 @@ def get_current_user(
     return user
 
 
+def get_current_user_optional(
+    token: str | None = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> models.User | None:
+    """Extract authenticated user if token is provided; otherwise return None without raising 401."""
+    if token is None:
+        return None
+    payload = decode_access_token(token)
+    if payload is None:
+        return None
+    email = payload.get("sub")
+    if email is None:
+        return None
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if user is None or not user.is_active:
+        return None
+    return user
+
+
 def require_roles(*roles: models.UserRole) -> Callable:
     """Dependency factory: raises 403 unless current_user.role is in `roles`."""
     flattened_roles = []

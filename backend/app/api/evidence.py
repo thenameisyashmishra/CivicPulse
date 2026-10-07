@@ -114,7 +114,7 @@ def upload_evidence(
         project_id=project_id,
         uploaded_by_id=current_user.id,
         image_path=public_path,
-        caption=caption,
+        caption=safe_caption,
         gps_lat=result.gps_lat,
         gps_lng=result.gps_lng,
         captured_at=result.captured_at,
@@ -158,7 +158,7 @@ def upload_evidence(
             "ai_status": evidence.ai_status.value,
             "quality_score": evidence.quality_score,
             "completion_estimate": evidence.completion_estimate,
-            "caption": caption,
+            "caption": safe_caption,
             "image_path": public_path,
         },
         project_id=project_id,
@@ -172,6 +172,8 @@ def upload_evidence(
 @router.get("/projects/{project_id}/evidence", response_model=list[schemas.EvidenceListItem])
 def list_project_evidence(
     project_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     _current_user: models.User = Depends(get_current_user),
 ):
@@ -181,6 +183,8 @@ def list_project_evidence(
         db.query(models.Evidence)
         .filter(models.Evidence.project_id == project_id)
         .order_by(models.Evidence.created_at.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
     return items
@@ -189,13 +193,15 @@ def list_project_evidence(
 @router.get("/evidence", response_model=list[schemas.EvidenceListItem])
 def list_evidence(
     status_filter: EvidenceStatus | None = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     _current_user: models.User = Depends(get_current_user),
 ):
     query = db.query(models.Evidence)
     if status_filter:
         query = query.filter(models.Evidence.status == status_filter)
-    return query.order_by(models.Evidence.created_at.desc()).all()
+    return query.order_by(models.Evidence.created_at.desc()).offset(offset).limit(limit).all()
 
 
 @router.get("/evidence/{evidence_id}", response_model=schemas.EvidenceOut)

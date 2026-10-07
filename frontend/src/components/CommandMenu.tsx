@@ -20,7 +20,10 @@ import {
   LogOut,
   Building2,
   Brain,
+  Sun,
+  Moon,
 } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   CommandDialog,
   CommandInput,
@@ -36,6 +39,7 @@ import {
   fetchVerifications,
   formatCurrency,
   clearToken,
+  getToken,
   budgetCsvUrl,
   type Project,
   type Verification,
@@ -51,6 +55,7 @@ export interface CommandMenuProps {
 export function CommandMenu({ open: controlledOpen, onOpenChange }: CommandMenuProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const [, navigate] = useLocation();
+  const { theme, setTheme, toggleTheme } = useTheme();
 
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : uncontrolledOpen;
@@ -76,17 +81,21 @@ export function CommandMenu({ open: controlledOpen, onOpenChange }: CommandMenuP
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [open, isControlled, onOpenChange]);
 
-  // Fetch Projects with React Query cache
+  const token = getToken();
+
+  // Fetch Projects with React Query cache (only when CommandMenu is opened and authenticated)
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["projects"],
     queryFn: () => fetchProjects(),
+    enabled: open && !!token,
     staleTime: 1000 * 60 * 5, // 5 min cache
   });
 
-  // Fetch Verifications with React Query cache
+  // Fetch Verifications with React Query cache (only when CommandMenu is opened and authenticated)
   const { data: verifications = [] } = useQuery<Verification[]>({
     queryKey: ["verifications"],
     queryFn: () => fetchVerifications(),
+    enabled: open && !!token,
     staleTime: 1000 * 60 * 5, // 5 min cache
   });
 
@@ -360,6 +369,75 @@ export function CommandMenu({ open: controlledOpen, onOpenChange }: CommandMenuP
             </div>
             <CommandShortcut className="text-[10px] font-mono text-muted-foreground/70 bg-card px-1.5 py-0.5 rounded border border-border/80">
               EXPORT
+            </CommandShortcut>
+          </CommandItem>
+
+          <CommandItem
+            value="Toggle Theme Switch Light Dark Mode Appearance UI Color"
+            onSelect={() => handleSelect(() => toggleTheme())}
+            className="flex items-center justify-between px-3 py-2.5 rounded-lg text-xs cursor-pointer data-[selected=true]:bg-primary/15 data-[selected=true]:text-foreground data-[selected=true]:border-primary/40 border border-transparent transition-all duration-150"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-1.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0">
+                {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+              </div>
+              <div className="min-w-0">
+                <div className="font-semibold text-foreground tracking-wide" style={{ fontFamily: "var(--font-heading)" }}>
+                  Toggle Theme ({theme === "dark" ? "Switch to Light" : "Switch to Dark"})
+                </div>
+                <div className="text-[11px] text-muted-foreground truncate" style={{ fontFamily: "var(--font-mono)" }}>
+                  Toggle between high-contrast GovTech daylight and Cyber Dark mode
+                </div>
+              </div>
+            </div>
+            <CommandShortcut className="text-[10px] font-mono text-muted-foreground/70 bg-card px-1.5 py-0.5 rounded border border-border/80">
+              THEME
+            </CommandShortcut>
+          </CommandItem>
+
+          <CommandItem
+            value="Switch to Light Mode Theme daylight bright"
+            onSelect={() => handleSelect(() => setTheme("light"))}
+            className="flex items-center justify-between px-3 py-2.5 rounded-lg text-xs cursor-pointer data-[selected=true]:bg-primary/15 data-[selected=true]:text-foreground data-[selected=true]:border-primary/40 border border-transparent transition-all duration-150"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-1.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-500 shrink-0">
+                <Sun size={15} />
+              </div>
+              <div className="min-w-0">
+                <div className="font-semibold text-foreground tracking-wide" style={{ fontFamily: "var(--font-heading)" }}>
+                  Switch to Light Mode
+                </div>
+                <div className="text-[11px] text-muted-foreground truncate" style={{ fontFamily: "var(--font-mono)" }}>
+                  Enable clean daylight palette with high-contrast text and crisp cards
+                </div>
+              </div>
+            </div>
+            <CommandShortcut className="text-[10px] font-mono text-muted-foreground/70 bg-card px-1.5 py-0.5 rounded border border-border/80">
+              LIGHT
+            </CommandShortcut>
+          </CommandItem>
+
+          <CommandItem
+            value="Switch to Dark Mode Theme cyber neon night"
+            onSelect={() => handleSelect(() => setTheme("dark"))}
+            className="flex items-center justify-between px-3 py-2.5 rounded-lg text-xs cursor-pointer data-[selected=true]:bg-primary/15 data-[selected=true]:text-foreground data-[selected=true]:border-primary/40 border border-transparent transition-all duration-150"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-1.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 shrink-0">
+                <Moon size={15} />
+              </div>
+              <div className="min-w-0">
+                <div className="font-semibold text-foreground tracking-wide" style={{ fontFamily: "var(--font-heading)" }}>
+                  Switch to Dark Mode
+                </div>
+                <div className="text-[11px] text-muted-foreground truncate" style={{ fontFamily: "var(--font-mono)" }}>
+                  Enable cyber command center dark palette with neon accents
+                </div>
+              </div>
+            </div>
+            <CommandShortcut className="text-[10px] font-mono text-muted-foreground/70 bg-card px-1.5 py-0.5 rounded border border-border/80">
+              DARK
             </CommandShortcut>
           </CommandItem>
         </CommandGroup>

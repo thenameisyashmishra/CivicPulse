@@ -343,20 +343,23 @@ class NotificationStore {
     const host = typeof window !== "undefined" ? window.location.host : "localhost:3000";
     const isDevPort = host.includes(":3000");
 
+    const token = typeof window !== "undefined" ? localStorage.getItem("cp_token") : null;
+    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
+
     // Candidate URL paths with fallbacks
     const candidateUrls: string[] = [];
 
     if (isDevPort) {
       // Direct backend connection candidates for local Vite dev
-      candidateUrls.push(`${protocol}//localhost:8000/ws/notifications`);
-      candidateUrls.push(`${protocol}//localhost:8000/api/ws/notifications`);
-      candidateUrls.push(`${protocol}//${host}/ws/notifications`);
-      candidateUrls.push(`${protocol}//${host}/api/ws/notifications`);
+      candidateUrls.push(`${protocol}//localhost:8000/ws/notifications${tokenQuery}`);
+      candidateUrls.push(`${protocol}//localhost:8000/api/ws/notifications${tokenQuery}`);
+      candidateUrls.push(`${protocol}//${host}/ws/notifications${tokenQuery}`);
+      candidateUrls.push(`${protocol}//${host}/api/ws/notifications${tokenQuery}`);
     } else {
       // Same-origin candidates for staging / production / proxies
-      candidateUrls.push(`${protocol}//${host}/ws/notifications`);
-      candidateUrls.push(`${protocol}//${host}/api/ws/notifications`);
-      candidateUrls.push(`${protocol}//localhost:8000/ws/notifications`);
+      candidateUrls.push(`${protocol}//${host}/ws/notifications${tokenQuery}`);
+      candidateUrls.push(`${protocol}//${host}/api/ws/notifications${tokenQuery}`);
+      candidateUrls.push(`${protocol}//localhost:8000/ws/notifications${tokenQuery}`);
     }
 
     const selectedUrl = candidateUrls[this.candidateIndex % candidateUrls.length];
@@ -478,7 +481,12 @@ class NotificationStore {
   private async hydrateHistory() {
     this.hydratedFromHistory = true;
     try {
-      const res = await fetch("/api/ws/history?limit=15");
+      const token = typeof window !== "undefined" ? localStorage.getItem("cp_token") : null;
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      const res = await fetch("/api/ws/history?limit=15", { headers });
       if (res.ok) {
         const history = (await res.json()) as Array<Record<string, any>>;
         if (Array.isArray(history) && history.length > 0) {

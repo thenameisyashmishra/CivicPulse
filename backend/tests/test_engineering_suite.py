@@ -2,6 +2,8 @@
 Unit & Integration Tests for B.4 Quality Assurance & Engineering Verification Suite (18 Features).
 """
 
+import io
+from PIL import Image
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
@@ -11,8 +13,9 @@ from app.core.security import create_access_token
 
 
 @pytest.fixture(scope="module")
-def client():
+def client(engineer_token):
     with TestClient(app) as c:
+        c.headers.update({"Authorization": f"Bearer {engineer_token}"})
         yield c
 
 
@@ -61,6 +64,58 @@ def test_yolo_detection(client, test_evidence):
     assert "bounding_boxes_json" in data
     assert data["detected_potholes_count"] >= 1
     assert "irc82_severity_score" in data
+
+
+# 1B. Live Camera & Upload Pothole Detection
+def test_detect_potholes_image_file(client):
+    import io
+    from PIL import Image, ImageDraw
+
+    # Create a synthetic road image with a dark pothole cavity
+    img = Image.new("RGB", (320, 240), color=(110, 110, 110))
+    draw = ImageDraw.Draw(img)
+    # Draw dark depression (pothole)
+    draw.ellipse([100, 70, 180, 150], fill=(20, 20, 20))
+    
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    buf.seek(0)
+
+    res = client.post(
+        "/api/engineering/pothole/detect-image",
+        files={"file": ("road_surface.jpg", buf.getvalue(), "image/jpeg")},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert "potholes_detected" in data
+    assert data["potholes_detected"] >= 1
+    assert "irc82_severity_score" in data
+    assert "bounding_boxes" in data
+    assert len(data["bounding_boxes"]) >= 1
+    assert "estimated_repair_cost_inr" in data
+    assert data["urgency"] in ["immediate_action", "urgent", "normal", "low"]
+
+
+def test_detect_potholes_image_base64(client):
+    import base64
+    import io
+    from PIL import Image
+
+    # Pristine road image without defects
+    img = Image.new("RGB", (200, 200), color=(140, 140, 140))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    b64 = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    res = client.post(
+        "/api/engineering/pothole/detect-image",
+        data={"image_base64": b64, "project_id": "PW-2024-001"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert "irc82_severity_score" in data
+    assert data["potholes_detected"] == 0
+    assert data["condition_rating"].startswith("Good")
 
 
 # 2. Satellite change-detection (ISRO Bhuvan / Sentinel-2)
@@ -299,3 +354,34 @@ def test_sample_chain_of_custody(client, engineer_token):
     )
     assert res.status_code == 200
     assert res.json()["tamper_seal_intact"] is True
+
+
+# 19. Direct image pothole detection with GPS geotagging & map hazard pins
+def test_detect_potholes_gps_geotagging(client):
+    img = Image.new("RGB", (200, 200), color=(128, 128, 128))
+    # Draw a simulated dark hole in the middle
+    for y in range(80, 120):
+        for x in range(80, 120):
+            img.putpixel((x, y), (20, 20, 20))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    jpeg_bytes = buf.getvalue()
+
+    res = client.post(
+        "/api/engineering/pothole/detect-image",
+        files={"file": ("field_road_audit.jpg", jpeg_bytes, "image/jpeg")},
+        data={"project_id": "PW-2024-001", "latitude": "28.5245", "longitude": "77.2065"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["latitude"] == 28.5245
+    assert data["longitude"] == 77.2065
+    assert "hazard_pin_id" in data
+
+    # Verify hazard pin appears on the GIS map endpoint
+    pins_res = client.get("/api/engineering/pothole/hazard-pins")
+    assert pins_res.status_code == 200
+    pins = pins_res.json()
+    assert len(pins) >= 3
+    assert any(p["id"] == data["hazard_pin_id"] for p in pins)
+

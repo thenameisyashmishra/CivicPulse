@@ -1,42 +1,32 @@
 /**
  * auth.ts — JWT token storage + helpers
- *
- * The token is kept in localStorage under the key `cp_token`.
- * Every authenticated request reads from here.
+ * Re-exports canonical auth helpers from @/lib/data for backward compatibility and clean architecture.
  */
 
-const TOKEN_KEY = 'cp_token'
-const USER_KEY  = 'cp_user'
+import { getToken, setToken, clearToken, getSavedUser } from "./data";
+
+export { getToken, clearToken };
 
 export function saveToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token)
-}
-
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
-}
-
-export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY)
-  localStorage.removeItem(USER_KEY)
+  setToken(token);
 }
 
 export function saveUser(user: object): void {
-  localStorage.setItem(USER_KEY, JSON.stringify(user))
+  if (typeof window !== "undefined" && window.localStorage) {
+    localStorage.setItem("cp_user", JSON.stringify(user));
+  }
 }
 
-export function getUser<T>(): T | null {
-  const raw = localStorage.getItem(USER_KEY)
-  if (!raw) return null
-  try { return JSON.parse(raw) as T } catch { return null }
+export function getUser<T = any>(): T | null {
+  return getSavedUser() as T | null;
 }
 
 export function isLoggedIn(): boolean {
-  return !!getToken()
+  return !!getToken();
 }
 
 /** Returns { Authorization: "Bearer <token>" } or {} */
 export function authHeader(): Record<string, string> {
-  const t = getToken()
-  return t ? { Authorization: `Bearer ${t}` } : {}
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
 }

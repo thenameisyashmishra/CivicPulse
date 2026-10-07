@@ -20,15 +20,12 @@ export const TILE_PROVIDERS: Record<MapTileLayer, TileProviderConfig> = {
   dark: {
     id: "dark",
     name: "Cyber Dark",
-    subname: "CartoDB Dark Matter",
-    attribution: "© OpenStreetMap contributors, © CARTO",
-    badge: "NEON THEME",
+    subname: "ESRI Dark Canvas",
+    attribution: "© Esri, HERE, Garmin, © OpenStreetMap",
+    badge: "DARK MODE",
     maxZoom: 19,
-    getUrl: (z, x, y) => {
-      const subdomains = ["a", "b", "c", "d"];
-      const s = subdomains[(x + y) % subdomains.length];
-      return `https://${s}.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}@2x.png`;
-    },
+    getUrl: (z, x, y) =>
+      `https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`,
   },
   satellite: {
     id: "satellite",
@@ -52,15 +49,12 @@ export const TILE_PROVIDERS: Record<MapTileLayer, TileProviderConfig> = {
   voyager: {
     id: "voyager",
     name: "Tactical Light",
-    subname: "CartoDB Voyager",
-    attribution: "© OpenStreetMap contributors, © CARTO",
+    subname: "ESRI World Street",
+    attribution: "© Esri, HERE, Garmin, USGS, © OpenStreetMap",
     badge: "DAYLIGHT",
     maxZoom: 19,
-    getUrl: (z, x, y) => {
-      const subdomains = ["a", "b", "c", "d"];
-      const s = subdomains[(x + y) % subdomains.length];
-      return `https://${s}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}@2x.png`;
-    },
+    getUrl: (z, x, y) =>
+      `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`,
   },
 };
 
@@ -171,6 +165,7 @@ export function calculateScaleBar(
 
   const standardDistances = [
     50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000,
+    500000, 1000000, 2000000,
   ];
 
   let chosenDistance = standardDistances[0];
@@ -295,7 +290,7 @@ export function fitBoundsToPoints(
   const zoomX = Math.log2(usableW / (spanNormX * 256));
   const zoomY = Math.log2(usableH / (spanNormY * 256));
 
-  const optimalZoom = Math.max(9, Math.min(16.5, Math.min(zoomX, zoomY)));
+  const optimalZoom = Math.max(3.5, Math.min(16.5, Math.min(zoomX, zoomY)));
 
   return { centerLat, centerLng, zoom: optimalZoom };
 }

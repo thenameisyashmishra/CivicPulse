@@ -36,19 +36,35 @@ class FundFlowForecastRequest(BaseModel):
 
 
 @router.get("/bi/kpis")
-def get_executive_bi_kpis(state_code: str = "DL", db: Session = Depends(get_db)):
+def get_executive_bi_kpis(
+    state_code: str = "DL",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer, UserRole.pradhan])),
+):
     return AnalyticsPolicyService.get_executive_bi_kpis(db, state_code)
 
 @router.post("/maintenance/predict")
-def run_predictive_maintenance_model(req: MaintenancePredictRequest, db: Session = Depends(get_db)):
+def run_predictive_maintenance_model(
+    req: MaintenancePredictRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return AnalyticsPolicyService.run_predictive_maintenance_model(db, req.asset_id, req.current_health_index)
 
 @router.post("/benchmark/compare")
-def compare_scheme_benchmarks(req: BenchmarkCompareRequest, db: Session = Depends(get_db)):
+def compare_scheme_benchmarks(
+    req: BenchmarkCompareRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer, UserRole.pradhan])),
+):
     return AnalyticsPolicyService.compare_scheme_benchmarks(db, req.scheme_a_code, req.scheme_b_code)
 
 @router.get("/leaderboards")
-def get_leaderboards(entity_type: str = "contractor", db: Session = Depends(get_db)):
+def get_leaderboards(
+    entity_type: str = "contractor",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer, UserRole.pradhan])),
+):
     return AnalyticsPolicyService.get_leaderboard(db, entity_type)
 
 @router.post("/export/audit")
@@ -62,7 +78,11 @@ def export_audit_data(
     )
 
 @router.post("/nl/query")
-def process_nl_query(req: NLQueryRequest, db: Session = Depends(get_db)):
+def process_nl_query(
+    req: NLQueryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer, UserRole.pradhan])),
+):
     return AnalyticsPolicyService.process_nl_query(db, req.user_prompt)
 
 @router.post("/fund-flow/forecast")

@@ -12,10 +12,11 @@ import {
   submitReview,
   verificationColors,
   getSavedUser,
+  quickSwitchRole,
   type Verification,
   type Project,
 } from "@/lib/data";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload, Brain, Search, ThumbsUp, ThumbsDown, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
 import { toast } from "sonner";
@@ -37,15 +38,24 @@ export default function Verifications() {
   const errorObj = errVerifications || errProjects;
   const error = errorObj instanceof Error ? errorObj.message : errorObj ? String(errorObj) : null;
 
-  const [filter, setFilter] = useState<string>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  // Set default selectedId when verifications load
-  useEffect(() => {
-    if (verifications.length > 0 && !selectedId) {
-      setSelectedId(verifications[0].id);
+  const [filter, setFilter] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const filterParam = params.get("filter");
+      if (filterParam && ["all", "verified", "pending", "failed", "review"].includes(filterParam)) {
+        return filterParam;
+      }
     }
-  }, [verifications, selectedId]);
+    return "all";
+  });
+
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("id");
+    }
+    return null;
+  });
 
   // Upload dialog states
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -57,7 +67,17 @@ export default function Verifications() {
   const [voteComment, setVoteComment] = useState("");
   const [reviewRemarks, setReviewRemarks] = useState("");
 
-  const user = getSavedUser();
+  const [currentUser, setCurrentUser] = useState(getSavedUser());
+
+  const handleRoleSwitch = async (role: "admin" | "engineer" | "pradhan" | "citizen") => {
+    try {
+      const res = await quickSwitchRole(role);
+      setCurrentUser(res.user);
+      toast.success(`Switched active persona to ${role.toUpperCase()} (${res.user.name})`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to switch role");
+    }
+  };
 
   // Mutations
   const uploadMutation = useMutation({
@@ -105,7 +125,7 @@ export default function Verifications() {
   });
 
   const filtered = filter === "all" ? verifications : verifications.filter((v) => v.status === filter);
-  const selected = verifications.find((v) => v.id === selectedId);
+  const selected = (selectedId ? verifications.find((v) => v.id === selectedId) : null) || filtered[0] || verifications[0];
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -347,7 +367,7 @@ export default function Verifications() {
                   )}
 
                   {/* Citizen Interaction Form */}
-                  {user?.role === "citizen" && selected.status !== "verified" && selected.status !== "failed" && (
+                  {currentUser?.role === "citizen" && selected.status !== "verified" && selected.status !== "failed" && (
                     <div className="border border-primary/20 bg-primary/5 p-4 space-y-3">
                       <div>
                         <span className="text-[10px] text-primary uppercase block font-semibold" style={{ fontFamily: "var(--font-mono)" }}>
@@ -366,14 +386,14 @@ export default function Verifications() {
                         <button
                           disabled={voteMutation.isPending}
                           onClick={() => handleCastVote("completed")}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/40 text-emerald-400 text-xs hover:bg-emerald-500/20 font-semibold"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/40 text-emerald-400 text-xs hover:bg-emerald-500/20 font-semibold cursor-pointer"
                         >
                           <ThumbsUp size={12} /> Yes
                         </button>
                         <button
                           disabled={voteMutation.isPending}
                           onClick={() => handleCastVote("incomplete")}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 border border-rose-500/40 text-rose-400 text-xs hover:bg-rose-500/20 font-semibold"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 border border-rose-500/40 text-rose-400 text-xs hover:bg-rose-500/20 font-semibold cursor-pointer"
                         >
                           <ThumbsDown size={12} /> No
                         </button>
@@ -382,13 +402,34 @@ export default function Verifications() {
                   )}
 
                   {/* Official Action Form */}
-                  {user?.role !== "citizen" && selected.status !== "verified" && selected.status !== "failed" && (
+                  {currentUser?.role !== "citizen" && selected.status !== "verified" && selected.status !== "failed" && (
                     <div className="border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
-                      <div>
-                        <span className="text-[10px] text-amber-500 uppercase block font-semibold" style={{ fontFamily: "var(--font-mono)" }}>
-                          SUBMIT OFFICIAL REVIEW DECISION
-                        </span>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">Registered action for {user?.role.toUpperCase()} account role. Enforces chronological order.</p>
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                          <span className="text-[10px] text-amber-500 uppercase block font-semibold" style={{ fontFamily: "var(--font-mono)" }}>
+                            SUBMIT OFFICIAL REVIEW DECISION
+                          </span>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Active Role: <span className="text-foreground font-bold font-mono">{(currentUser?.role || "GUEST").toUpperCase()}</span> (Governance Level Order: Pradhan → Engineer → Admin)
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[9px] text-muted-foreground font-mono mr-1">Switch:</span>
+                          {(["pradhan", "engineer", "admin"] as const).map((r) => (
+                            <button
+                              key={r}
+                              type="button"
+                              onClick={() => handleRoleSwitch(r)}
+                              className={`px-1.5 py-0.5 text-[9px] rounded font-mono transition-colors cursor-pointer ${
+                                currentUser?.role === r
+                                  ? "bg-amber-500 text-black font-bold"
+                                  : "bg-background border border-border text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {r.toUpperCase()}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                       <div className="flex gap-2 flex-col">
                         <textarea
@@ -402,14 +443,14 @@ export default function Verifications() {
                           <button
                             disabled={reviewMutation.isPending}
                             onClick={() => handleReviewSubmit("rejected")}
-                            className="px-3 py-1.5 bg-rose-500/15 border border-rose-500/50 text-rose-400 text-xs hover:bg-rose-500/30 transition-colors font-semibold"
+                            className="px-3 py-1.5 bg-rose-500/15 border border-rose-500/50 text-rose-400 text-xs hover:bg-rose-500/30 transition-colors font-semibold cursor-pointer"
                           >
                             ❌ Reject Evidence
                           </button>
                           <button
                             disabled={reviewMutation.isPending}
                             onClick={() => handleReviewSubmit("approved")}
-                            className="px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/50 text-emerald-400 text-xs hover:bg-emerald-500/30 transition-colors font-semibold"
+                            className="px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/50 text-emerald-400 text-xs hover:bg-emerald-500/30 transition-colors font-semibold cursor-pointer"
                           >
                             ✔ Approve Step
                           </button>

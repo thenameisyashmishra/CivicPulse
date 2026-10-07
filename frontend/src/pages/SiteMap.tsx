@@ -8,6 +8,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   fetchProjects,
   uploadEvidence,
@@ -37,6 +38,7 @@ import {
   Minimize2,
   Layers,
   Crosshair,
+  Globe,
   ShieldCheck,
   Upload,
   ExternalLink,
@@ -53,13 +55,39 @@ import {
   Grid3X3,
   Sparkles,
   ChevronRight,
+  Flame,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
+
+export interface RoadHazardPin {
+  id: string;
+  project_id: string;
+  title: string;
+  chainage: string;
+  latitude: number;
+  longitude: number;
+  severity_score: number;
+  condition_rating: string;
+  potholes_count: number;
+  cracks_count: number;
+  repair_cost_inr: number;
+  directive: string;
+  created_at: string;
+  status: string;
+}
 
 // Default coordinates centered on Delhi NCR
 const DEFAULT_CENTER_LAT = 28.6139;
 const DEFAULT_CENTER_LNG = 77.209;
 const DEFAULT_ZOOM = 12;
+
+// All-India National Overview coordinates (Nagpur / Central India center)
+const INDIA_CENTER_LAT = 22.0;
+const INDIA_CENTER_LNG = 79.5;
+const INDIA_ZOOM = 4.3;
+const MIN_ZOOM = 3.2;
+const MAX_ZOOM = 18.5;
 
 export default function SiteMap() {
   const queryClient = useQueryClient();
@@ -77,16 +105,41 @@ export default function SiteMap() {
   });
   const error = errObj instanceof Error ? errObj.message : errObj ? String(errObj) : null;
 
+  // Load live hazard pins from CivicPulse Engineering API
+  const { data: hazardPins = [] } = useQuery<RoadHazardPin[]>({
+    queryKey: ["hazard-pins"],
+    queryFn: async () => {
+      const res = await fetch("/api/engineering/pothole/hazard-pins");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 12000,
+  });
+
   // UI state
+  const { theme } = useTheme();
   const [filter, setFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedHazardId, setSelectedHazardId] = useState<string | null>(null);
+  const [showHazards, setShowHazards] = useState<boolean>(true);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [copiedCoords, setCopiedCoords] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
 
-  // Map settings
-  const [tileLayer, setTileLayer] = useState<MapTileLayer>("dark");
+  // Map settings — dynamically adapt to Light/Dark theme
+  const [tileLayer, setTileLayer] = useState<MapTileLayer>(() => {
+    return theme === "light" ? "voyager" : "dark";
+  });
+  const [userSelectedLayer, setUserSelectedLayer] = useState(false);
+
+  // Sync default layer when theme changes unless user explicitly switched layers
+  useEffect(() => {
+    if (!userSelectedLayer) {
+      setTileLayer(theme === "light" ? "voyager" : "dark");
+    }
+  }, [theme, userSelectedLayer]);
+
   const [showGeofences, setShowGeofences] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
   const [showLayerMenu, setShowLayerMenu] = useState(false);
@@ -98,6 +151,25 @@ export default function SiteMap() {
   const [centerLat, setCenterLat] = useState(DEFAULT_CENTER_LAT);
   const [centerLng, setCenterLng] = useState(DEFAULT_CENTER_LNG);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+
+  // Real-time refs for non-passive event listeners (wheel zoom)
+  const centerLatRef = useRef(centerLat);
+  const centerLngRef = useRef(centerLng);
+  const zoomRef = useRef(zoom);
+  const viewSizeRef = useRef(viewSize);
+
+  useEffect(() => {
+    centerLatRef.current = centerLat;
+  }, [centerLat]);
+  useEffect(() => {
+    centerLngRef.current = centerLng;
+  }, [centerLng]);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+  useEffect(() => {
+    viewSizeRef.current = viewSize;
+  }, [viewSize]);
 
   // Mouse HUD position readout
   const [cursorLatLng, setCursorLatLng] = useState<{ lat: number; lng: number } | null>(null);
@@ -163,6 +235,15 @@ export default function SiteMap() {
     return projects.find((p) => p.id === selectedId) || null;
   }, [projects, selectedId]);
 
+  const selectedHazard = useMemo(() => {
+    return hazardPins.find((h) => h.id === selectedHazardId) || null;
+  }, [hazardPins, selectedHazardId]);
+
+  const projectHazards = useMemo(() => {
+    if (!selectedProject) return [];
+    return hazardPins.filter((h) => h.project_id === selectedProject.id);
+  }, [hazardPins, selectedProject]);
+
   // Auto-fit all project markers on initial data load
   const hasAutoFittedRef = useRef(false);
   useEffect(() => {
@@ -198,17 +279,25 @@ export default function SiteMap() {
     []
   );
 
-  // Action: Reset view to Delhi NCR
+  // Action: Reset view to Delhi NCR cluster
   const handleRecenterNCR = useCallback(() => {
     setCenterLat(DEFAULT_CENTER_LAT);
     setCenterLng(DEFAULT_CENTER_LNG);
     setZoom(DEFAULT_ZOOM);
-    toast.info("Map recentered to Delhi NCR");
+    toast.info("Map centered to Delhi NCR Monitored Cluster");
+  }, []);
+
+  // Action: Pan-India National Overview (Entire Country: Kashmir to Kanyakumari)
+  const handleViewAllIndia = useCallback(() => {
+    setCenterLat(INDIA_CENTER_LAT);
+    setCenterLng(INDIA_CENTER_LNG);
+    setZoom(INDIA_ZOOM);
+    toast.info("🇮🇳 Framed All-India National Overview (Kashmir to Kanyakumari)");
   }, []);
 
   // Zoom controls
-  const handleZoomIn = () => setZoom((z) => Math.min(18.5, Math.round((z + 0.8) * 10) / 10));
-  const handleZoomOut = () => setZoom((z) => Math.max(6, Math.round((z - 0.8) * 10) / 10));
+  const handleZoomIn = () => setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + 0.8) * 10) / 10));
+  const handleZoomOut = () => setZoom((z) => Math.max(MIN_ZOOM, Math.round((z - 0.8) * 10) / 10));
 
   // Pointer drag panning
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -227,7 +316,11 @@ export default function SiteMap() {
       centerLat,
       centerLng,
     };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // Pointer capture safety
+    }
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -258,8 +351,10 @@ export default function SiteMap() {
       viewSize.height
     );
 
-    setCenterLat(newCenter.lat);
-    setCenterLng(newCenter.lng);
+    const clampedLat = Math.max(-75, Math.min(75, newCenter.lat));
+    const wrappedLng = ((newCenter.lng + 180) % 360 + 360) % 360 - 180;
+    setCenterLat(clampedLat);
+    setCenterLng(wrappedLng);
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -273,44 +368,63 @@ export default function SiteMap() {
     }
   };
 
-  // Mouse wheel zoom centered on cursor location
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    if (!mapContainerRef.current) return;
+  // Attach native non-passive wheel listener to allow smooth zoom and preventDefault()
+  useEffect(() => {
+    const el = mapContainerRef.current;
+    if (!el) return;
 
-    const rect = mapContainerRef.current.getBoundingClientRect();
-    const cursorX = e.clientX - rect.left;
-    const cursorY = e.clientY - rect.top;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    // Lat/Lng under mouse cursor before zoom
-    const cursorGeo = screenToLatLng(
-      cursorX,
-      cursorY,
-      centerLat,
-      centerLng,
-      zoom,
-      viewSize.width,
-      viewSize.height
-    );
+      const rect = el.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
 
-    const zoomDelta = -e.deltaY * 0.0015;
-    const newZoom = Math.max(5.5, Math.min(18.5, zoom + zoomDelta));
+      // Lat/Lng under mouse cursor before zoom
+      const cursorGeo = screenToLatLng(
+        cursorX,
+        cursorY,
+        centerLatRef.current,
+        centerLngRef.current,
+        zoomRef.current,
+        viewSizeRef.current.width,
+        viewSizeRef.current.height
+      );
 
-    // Recompute center so cursor remains over same geographic point
-    const newCenter = screenToLatLng(
-      viewSize.width / 2 + (viewSize.width / 2 - cursorX),
-      viewSize.height / 2 + (viewSize.height / 2 - cursorY),
-      cursorGeo.lat,
-      cursorGeo.lng,
-      newZoom,
-      viewSize.width,
-      viewSize.height
-    );
+      // Normalize delta across browsers, standard mice, and high-precision trackpads
+      let delta = e.deltaY;
+      if (e.deltaMode === 1) delta *= 24; // lines mode (Windows standard wheel)
+      else if (e.deltaMode === 2) delta *= 60; // page mode
 
-    setZoom(newZoom);
-    setCenterLat(newCenter.lat);
-    setCenterLng(newCenter.lng);
-  };
+      // Responsive, clamped zoom step
+      const clampedDelta = Math.max(-100, Math.min(100, delta));
+      const zoomChange = -clampedDelta * 0.004;
+
+      const currentZ = zoomRef.current;
+      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round((currentZ + zoomChange) * 100) / 100));
+
+      if (Math.abs(newZoom - currentZ) < 0.001) return;
+
+      // Recompute center so cursor remains locked over the same geographic location
+      const newCenter = screenToLatLng(
+        viewSizeRef.current.width / 2 + (viewSizeRef.current.width / 2 - cursorX),
+        viewSizeRef.current.height / 2 + (viewSizeRef.current.height / 2 - cursorY),
+        cursorGeo.lat,
+        cursorGeo.lng,
+        newZoom,
+        viewSizeRef.current.width,
+        viewSizeRef.current.height
+      );
+
+      setZoom(newZoom);
+      setCenterLat(Math.max(-75, Math.min(75, newCenter.lat)));
+      setCenterLng(((newCenter.lng + 180) % 360 + 360) % 360 - 180);
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   // Double click to zoom in
   const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -332,9 +446,9 @@ export default function SiteMap() {
       viewSize.height
     );
 
-    setCenterLat(clickGeo.lat);
-    setCenterLng(clickGeo.lng);
-    setZoom((z) => Math.min(18.5, z + 1.2));
+    setCenterLat(Math.max(-75, Math.min(75, clickGeo.lat)));
+    setCenterLng(((clickGeo.lng + 180) % 360 + 360) % 360 - 180);
+    setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + 1.2) * 10) / 10));
   };
 
   // Touch gesture support (pinch-to-zoom)
@@ -346,7 +460,7 @@ export default function SiteMap() {
 
       if (touchDistanceRef.current !== null) {
         const delta = (distance - touchDistanceRef.current) * 0.01;
-        setZoom((z) => Math.max(5.5, Math.min(18.5, z + delta)));
+        setZoom((z) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z + delta)));
       }
       touchDistanceRef.current = distance;
     }
@@ -383,6 +497,9 @@ export default function SiteMap() {
     setUploadProjectId(projectId);
     setUploadFile(null);
     setUploadCaption("");
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
     setPreviewUrl(null);
     setShowUploadModal(true);
   };
@@ -397,6 +514,9 @@ export default function SiteMap() {
       queryClient.invalidateQueries({ queryKey: ["verifications"] });
       setShowUploadModal(false);
       setUploadFile(null);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
       setPreviewUrl(null);
     },
     onError: (err) => {
@@ -408,6 +528,9 @@ export default function SiteMap() {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setUploadFile(file);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
       const url = URL.createObjectURL(file);
       setPreviewUrl(url);
     }
@@ -436,7 +559,7 @@ export default function SiteMap() {
         {/* Top Header & Tactical Controls */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-2 border-b border-border">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="w-2.5 h-2.5 rounded-full bg-primary animate-pulse" />
               <h1 className="text-xl font-bold tracking-tight" style={{ fontFamily: "var(--font-mono)" }}>
                 GEOSPATIAL SITE MAP
@@ -444,6 +567,34 @@ export default function SiteMap() {
               <span className="px-2 py-0.5 text-[10px] font-mono rounded bg-primary/10 border border-primary/30 text-primary uppercase">
                 500M GEOFENCE LOCK
               </span>
+
+              {/* Quick View Presets: All India vs Delhi NCR */}
+              <div className="inline-flex items-center p-0.5 rounded-md bg-muted/60 border border-border text-[11px] font-mono ml-1">
+                <button
+                  onClick={handleRecenterNCR}
+                  className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
+                    zoom > 6
+                      ? "bg-card text-foreground font-semibold shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title="Focus on Delhi NCR Monitored Cluster (Zoom 12x)"
+                >
+                  <Navigation size={11} className="text-primary" />
+                  <span>Delhi NCR</span>
+                </button>
+                <button
+                  onClick={handleViewAllIndia}
+                  className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
+                    zoom <= 6
+                      ? "bg-card text-foreground font-semibold shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title="Frame All-India National Map (Kashmir to Kanyakumari, Zoom 4.3x)"
+                >
+                  <Globe size={11} className="text-primary" />
+                  <span>🇮🇳 All-India</span>
+                </button>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2" style={{ fontFamily: "var(--font-mono)" }}>
               {loading ? (
@@ -452,9 +603,13 @@ export default function SiteMap() {
                 <span className="text-destructive">⚠ {error}</span>
               ) : (
                 <>
-                  <span>DELHI NCR SECTOR · {projects.length} MONITORED SITES</span>
+                  <span>
+                    {zoom <= 6 ? "ALL-INDIA NATIONAL OVERVIEW" : "DELHI NCR SECTOR"} · {projects.length} MONITORED SITES
+                  </span>
                   <span className="text-muted-foreground/40">•</span>
-                  <span className="text-emerald-400">{projects.filter((p) => p.status === "active").length} ACTIVE PERIMETERS</span>
+                  <span className="text-emerald-500 dark:text-emerald-400">
+                    {projects.filter((p) => p.status === "active").length} ACTIVE PERIMETERS
+                  </span>
                 </>
               )}
             </p>
@@ -491,6 +646,27 @@ export default function SiteMap() {
                 </button>
               );
             })}
+
+            {/* Road Hazards Layer Toggle Pill */}
+            <button
+              onClick={() => {
+                setShowHazards(!showHazards);
+                toast.info(!showHazards ? `Enabled Road Hazards layer (${hazardPins.length} active pins)` : "Hidden Road Hazards layer");
+              }}
+              className={`px-3 py-1.5 text-xs rounded transition-all flex items-center gap-1.5 font-bold ${
+                showHazards
+                  ? "bg-rose-500/20 border-2 border-rose-500 text-rose-400 shadow-sm"
+                  : "bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-accent/40"
+              }`}
+              style={{ fontFamily: "var(--font-mono)" }}
+              title="Toggle live road pothole & crack hazard markers"
+            >
+              <Flame size={13} className={showHazards ? "text-rose-400 animate-pulse" : "text-muted-foreground"} />
+              <span>ROAD HAZARDS</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/30 text-rose-300">
+                {hazardPins.length}
+              </span>
+            </button>
 
             <button
               onClick={() => refetch()}
@@ -563,11 +739,10 @@ export default function SiteMap() {
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
-              onWheel={handleWheel}
               onDoubleClick={handleDoubleClick}
               onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
-              className="w-full h-full relative cursor-grab active:cursor-grabbing select-none overflow-hidden bg-slate-950"
+              className="w-full h-full relative cursor-grab active:cursor-grabbing select-none overflow-hidden bg-slate-200 dark:bg-slate-950"
               style={{ touchAction: "none" }}
             >
               {/* Tile Layer Canvas */}
@@ -585,7 +760,6 @@ export default function SiteMap() {
                       top: `${tile.screenTop}px`,
                       width: `${tile.size}px`,
                       height: `${tile.size}px`,
-                      filter: tileLayer === "osm" ? "brightness(0.85) contrast(1.1) invert(0.05)" : undefined,
                     }}
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.opacity = "0.2";
@@ -596,21 +770,59 @@ export default function SiteMap() {
 
               {/* Cyber Tactical Grid Overlay (Togglable) */}
               {showGrid && (
-                <div className="absolute inset-0 pointer-events-none opacity-30 mix-blend-screen">
+                <div
+                  className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${
+                    theme === "dark" ? "opacity-30 mix-blend-screen" : "opacity-20"
+                  }`}
+                >
                   <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
                     <defs>
                       <pattern id="cyber-grid" width="60" height="60" patternUnits="userSpaceOnUse">
-                        <path d="M 60 0 L 0 0 0 60" fill="none" stroke="oklch(0.84 0.15 195)" strokeWidth="0.5" opacity="0.4" />
-                        <circle cx="0" cy="0" r="1.5" fill="oklch(0.84 0.15 195)" opacity="0.7" />
+                        <path
+                          d="M 60 0 L 0 0 0 60"
+                          fill="none"
+                          stroke={theme === "dark" ? "oklch(0.84 0.15 195)" : "oklch(0.35 0.12 210)"}
+                          strokeWidth="0.5"
+                          opacity="0.4"
+                        />
+                        <circle
+                          cx="0"
+                          cy="0"
+                          r="1.5"
+                          fill={theme === "dark" ? "oklch(0.84 0.15 195)" : "oklch(0.35 0.12 210)"}
+                          opacity="0.7"
+                        />
                       </pattern>
                     </defs>
                     <rect width="100%" height="100%" fill="url(#cyber-grid)" />
 
                     {/* Central Tactical Reticle */}
                     <g transform={`translate(${viewSize.width / 2}, ${viewSize.height / 2})`} opacity="0.6">
-                      <circle r="36" fill="none" stroke="oklch(0.84 0.15 195)" strokeWidth="1" strokeDasharray="4 4" />
-                      <line x1="-50" y1="0" x2="50" y2="0" stroke="oklch(0.84 0.15 195)" strokeWidth="1" strokeDasharray="6 6" />
-                      <line x1="0" y1="-50" x2="0" y2="50" stroke="oklch(0.84 0.15 195)" strokeWidth="1" strokeDasharray="6 6" />
+                      <circle
+                        r="36"
+                        fill="none"
+                        stroke={theme === "dark" ? "oklch(0.84 0.15 195)" : "oklch(0.35 0.12 210)"}
+                        strokeWidth="1"
+                        strokeDasharray="4 4"
+                      />
+                      <line
+                        x1="-50"
+                        y1="0"
+                        x2="50"
+                        y2="0"
+                        stroke={theme === "dark" ? "oklch(0.84 0.15 195)" : "oklch(0.35 0.12 210)"}
+                        strokeWidth="1"
+                        strokeDasharray="6 6"
+                      />
+                      <line
+                        x1="0"
+                        y1="-50"
+                        x2="0"
+                        y2="50"
+                        stroke={theme === "dark" ? "oklch(0.84 0.15 195)" : "oklch(0.35 0.12 210)"}
+                        strokeWidth="1"
+                        strokeDasharray="6 6"
+                      />
                     </g>
                   </svg>
                 </div>
@@ -752,8 +964,8 @@ export default function SiteMap() {
                       <div
                         className={`px-2 py-0.5 mb-1 rounded text-[10px] font-mono whitespace-nowrap flex items-center gap-1.5 shadow-lg border transition-all ${
                           isSelected
-                            ? "bg-slate-900/95 border-primary text-primary font-bold shadow-[0_0_12px_rgba(0,212,255,0.4)]"
-                            : "bg-slate-900/85 border-border text-foreground hover:border-primary/50"
+                            ? "bg-card/95 border-primary text-primary font-bold shadow-[0_0_12px_rgba(0,212,255,0.4)]"
+                            : "bg-card/90 border-border text-foreground hover:border-primary/50"
                         }`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
@@ -804,6 +1016,97 @@ export default function SiteMap() {
                     </div>
                   );
                 })}
+
+                {/* Road Hazard Markers Layer */}
+                {showHazards &&
+                  hazardPins.map((h) => {
+                    const screenPos = latLngToScreen(
+                      h.latitude,
+                      h.longitude,
+                      centerLat,
+                      centerLng,
+                      zoom,
+                      viewSize.width,
+                      viewSize.height
+                    );
+                    const isSelected = selectedHazardId === h.id;
+                    const isCritical = h.severity_score >= 60;
+                    const color = isCritical ? "#ef4444" : "#f59e0b";
+
+                    // Cull offscreen pins
+                    if (
+                      screenPos.x < -60 ||
+                      screenPos.x > viewSize.width + 60 ||
+                      screenPos.y < -60 ||
+                      screenPos.y > viewSize.height + 60
+                    ) {
+                      return null;
+                    }
+
+                    return (
+                      <div
+                        key={`hazard-${h.id}`}
+                        className="interactive-marker absolute pointer-events-auto cursor-pointer transition-transform duration-200"
+                        style={{
+                          left: `${screenPos.x}px`,
+                          top: `${screenPos.y}px`,
+                          transform: `translate(-50%, -100%) scale(${isSelected ? 1.25 : 1})`,
+                          zIndex: isSelected ? 50 : 35,
+                        }}
+                        onClick={() => {
+                          setSelectedHazardId(h.id);
+                          if (h.project_id) setSelectedId(h.project_id);
+                          setIsInspectorOpen(true);
+                        }}
+                        title={`Road Defect: ${h.title} (Score: ${h.severity_score})`}
+                      >
+                        {/* Floating Hazard Label Pill */}
+                        <div
+                          className={`px-2 py-0.5 mb-1 rounded text-[10px] font-mono whitespace-nowrap flex items-center gap-1.5 shadow-lg border transition-all ${
+                            isSelected
+                              ? "bg-rose-50 dark:bg-rose-950/95 border-rose-500 text-rose-700 dark:text-rose-300 font-bold shadow-[0_0_12px_rgba(239,68,68,0.4)]"
+                              : isCritical
+                              ? "bg-card/95 border-rose-500/80 text-rose-600 dark:text-rose-300 hover:border-rose-400"
+                              : "bg-card/95 border-amber-500/80 text-amber-600 dark:text-amber-300 hover:border-amber-400"
+                          }`}
+                        >
+                          <Flame size={12} className={isCritical ? "text-rose-500 dark:text-rose-400 animate-pulse" : "text-amber-500 dark:text-amber-400"} />
+                          <span className="font-bold">{h.id}</span>
+                          <span className="text-[9px] opacity-80">{h.chainage}</span>
+                        </div>
+
+                        {/* Tactical Pin Body */}
+                        <div className="relative flex items-center justify-center">
+                          {/* Outer Pulsing Beacon */}
+                          <div
+                            className="absolute -inset-2.5 rounded-full animate-ping pointer-events-none"
+                            style={{
+                              backgroundColor: `${color}33`,
+                              animationDuration: isCritical ? "1.8s" : "3.2s",
+                            }}
+                          />
+
+                          {/* Pin Center */}
+                          <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center shadow-lg border-2 relative"
+                            style={{
+                              backgroundColor: "oklch(0.12 0.015 255)",
+                              borderColor: color,
+                              boxShadow: `0 0 16px ${color}aa`,
+                            }}
+                          >
+                            <Flame size={16} style={{ color }} className={isCritical ? "animate-bounce" : ""} />
+                          </div>
+
+                          {/* Pin Pointer Arrow Needle */}
+                          <div
+                            className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] mx-auto absolute -bottom-1.5"
+                            style={{ borderTopColor: color }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
 
               {/* Floating Top-Right Map Controls Toolbar */}
@@ -812,7 +1115,7 @@ export default function SiteMap() {
                 <div className="relative">
                   <button
                     onClick={() => setShowLayerMenu(!showLayerMenu)}
-                    className="p-2 bg-slate-900/90 hover:bg-slate-800 border border-border hover:border-primary text-foreground rounded shadow-md flex items-center gap-1.5 text-xs font-mono transition-all backdrop-blur-md"
+                    className="p-2 bg-card/90 hover:bg-accent border border-border hover:border-primary text-foreground rounded shadow-md flex items-center gap-1.5 text-xs font-mono transition-all backdrop-blur-md"
                     title="Change Base Map Style"
                   >
                     <Layers size={15} className="text-primary" />
@@ -821,7 +1124,7 @@ export default function SiteMap() {
 
                   {/* Dropdown Menu for Layers */}
                   {showLayerMenu && (
-                    <div className="absolute right-0 top-full mt-1.5 w-56 bg-slate-900/95 border border-border rounded-lg shadow-xl p-2 z-50 backdrop-blur-md space-y-1">
+                    <div className="absolute right-0 top-full mt-1.5 w-56 bg-card/95 border border-border rounded-lg shadow-xl p-2 z-50 backdrop-blur-md space-y-1">
                       <div className="text-[10px] text-muted-foreground font-mono px-2 py-1 uppercase tracking-wider">
                         Tile Basemap Provider
                       </div>
@@ -832,6 +1135,7 @@ export default function SiteMap() {
                           <button
                             key={key}
                             onClick={() => {
+                              setUserSelectedLayer(true);
                               setTileLayer(key);
                               setShowLayerMenu(false);
                               toast.info(`Switched to ${prov.name} tiles`);
@@ -846,7 +1150,7 @@ export default function SiteMap() {
                               <div className="font-mono">{prov.name}</div>
                               <div className="text-[10px] text-muted-foreground">{prov.subname}</div>
                             </div>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted/60 font-mono text-muted-foreground">
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted font-mono text-muted-foreground">
                               {prov.badge}
                             </span>
                           </button>
@@ -862,7 +1166,7 @@ export default function SiteMap() {
                   className={`p-2 rounded border shadow-md flex items-center justify-center transition-all backdrop-blur-md ${
                     showGrid
                       ? "bg-primary/20 border-primary text-primary"
-                      : "bg-slate-900/90 border-border text-muted-foreground hover:text-foreground"
+                      : "bg-card/90 border-border text-muted-foreground hover:text-foreground"
                   }`}
                   title={showGrid ? "Disable Satellite HUD Grid" : "Enable Satellite HUD Grid"}
                 >
@@ -875,25 +1179,38 @@ export default function SiteMap() {
                   className={`p-2 rounded border shadow-md flex items-center justify-center transition-all backdrop-blur-md ${
                     showGeofences
                       ? "bg-primary/20 border-primary text-primary"
-                      : "bg-slate-900/90 border-border text-muted-foreground hover:text-foreground"
+                      : "bg-card/90 border-border text-muted-foreground hover:text-foreground"
                   }`}
                   title={showGeofences ? "Hide 500m Geofence Rings" : "Show 500m Geofence Rings"}
                 >
                   <ShieldCheck size={16} />
                 </button>
 
+                {/* Road Hazards Pin Toggle Button */}
+                <button
+                  onClick={() => setShowHazards(!showHazards)}
+                  className={`p-2 rounded border shadow-md flex items-center justify-center transition-all backdrop-blur-md ${
+                    showHazards
+                      ? "bg-rose-500/20 border-rose-500 text-rose-600 dark:text-rose-400"
+                      : "bg-card/90 border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                  title={showHazards ? "Hide Road Defect / Cavity Pins" : "Show Road Defect / Cavity Pins"}
+                >
+                  <Flame size={16} className={showHazards ? "animate-pulse" : ""} />
+                </button>
+
                 {/* Zoom In & Out */}
-                <div className="flex flex-col bg-slate-900/90 border border-border rounded shadow-md overflow-hidden backdrop-blur-md">
+                <div className="flex flex-col bg-card/90 border border-border rounded shadow-md overflow-hidden backdrop-blur-md">
                   <button
                     onClick={handleZoomIn}
-                    className="p-2 hover:bg-slate-800 text-foreground transition-colors border-b border-border/60"
+                    className="p-2 hover:bg-accent text-foreground transition-colors border-b border-border/60"
                     title="Zoom In (+)"
                   >
                     <ZoomIn size={16} />
                   </button>
                   <button
                     onClick={handleZoomOut}
-                    className="p-2 hover:bg-slate-800 text-foreground transition-colors"
+                    className="p-2 hover:bg-accent text-foreground transition-colors"
                     title="Zoom Out (-)"
                   >
                     <ZoomOut size={16} />
@@ -903,17 +1220,34 @@ export default function SiteMap() {
                 {/* Fit to Bounds Button */}
                 <button
                   onClick={handleFitBounds}
-                  className="p-2 bg-slate-900/90 hover:bg-slate-800 border border-border hover:border-primary text-foreground rounded shadow-md transition-all backdrop-blur-md"
+                  className="p-2 bg-card/90 hover:bg-accent border border-border hover:border-primary text-foreground rounded shadow-md transition-all backdrop-blur-md"
                   title="Fit All Monitored Sites in View"
                 >
                   <Crosshair size={16} className="text-primary" />
                 </button>
 
+                {/* All-India Overview Button */}
+                <button
+                  onClick={handleViewAllIndia}
+                  className={`p-2 rounded border shadow-md flex items-center justify-center transition-all backdrop-blur-md ${
+                    zoom <= 6
+                      ? "bg-primary/20 border-primary text-primary"
+                      : "bg-card/90 hover:bg-accent border border-border text-foreground hover:border-primary"
+                  }`}
+                  title="🇮🇳 All-India National Overview (Entire Country: Kashmir to Kanyakumari)"
+                >
+                  <Globe size={16} className="text-primary" />
+                </button>
+
                 {/* Delhi NCR Recenter Button */}
                 <button
                   onClick={handleRecenterNCR}
-                  className="p-2 bg-slate-900/90 hover:bg-slate-800 border border-border hover:border-primary text-foreground rounded shadow-md transition-all backdrop-blur-md"
-                  title="Recenter Map to Delhi NCR"
+                  className={`p-2 rounded border shadow-md flex items-center justify-center transition-all backdrop-blur-md ${
+                    zoom > 6
+                      ? "bg-primary/20 border-primary text-primary"
+                      : "bg-card/90 hover:bg-accent border border-border text-foreground hover:border-primary"
+                  }`}
+                  title="Recenter Map to Delhi NCR Monitored Cluster"
                 >
                   <Navigation size={16} />
                 </button>
@@ -921,7 +1255,7 @@ export default function SiteMap() {
                 {/* Fullscreen Mode Toggle */}
                 <button
                   onClick={() => setIsFullscreen(!isFullscreen)}
-                  className="p-2 bg-slate-900/90 hover:bg-slate-800 border border-border hover:border-primary text-foreground rounded shadow-md transition-all backdrop-blur-md"
+                  className="p-2 bg-card/90 hover:bg-accent border border-border hover:border-primary text-foreground rounded shadow-md transition-all backdrop-blur-md"
                   title={isFullscreen ? "Exit Fullscreen" : "Fullscreen View"}
                 >
                   {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
@@ -930,7 +1264,7 @@ export default function SiteMap() {
 
               {/* Top-Left Tactical Compass & Telemetry HUD */}
               <div className="absolute top-3 left-3 z-30 pointer-events-none">
-                <div className="bg-slate-900/90 border border-border/80 rounded px-3 py-2 text-[11px] font-mono shadow-md backdrop-blur-md space-y-1">
+                <div className="bg-card/90 border border-border/80 rounded px-3 py-2 text-[11px] font-mono shadow-md backdrop-blur-md space-y-1">
                   <div className="flex items-center gap-2 text-primary font-semibold">
                     <Compass size={14} />
                     <span>GPS HUD · SECTOR MONITOR</span>
@@ -939,7 +1273,7 @@ export default function SiteMap() {
                     CENTER: {centerLat.toFixed(4)}° N, {centerLng.toFixed(4)}° E
                   </div>
                   {cursorLatLng && (
-                    <div className="text-[10px] text-foreground/80">
+                    <div className="text-[10px] text-foreground">
                       CURSOR: {cursorLatLng.lat.toFixed(4)}° N, {cursorLatLng.lng.toFixed(4)}° E
                     </div>
                   )}
@@ -949,7 +1283,7 @@ export default function SiteMap() {
               {/* Bottom HUD Bar: Scale Bar & Attribution */}
               <div className="absolute bottom-3 left-3 z-30 pointer-events-none flex items-end gap-3">
                 {/* Distance Scale Bar */}
-                <div className="bg-slate-900/90 border border-border/80 rounded px-2.5 py-1 text-[10px] font-mono shadow-md backdrop-blur-md">
+                <div className="bg-card/90 border border-border/80 rounded px-2.5 py-1 text-[10px] font-mono shadow-md backdrop-blur-md">
                   <div className="text-muted-foreground mb-0.5">{scaleBar.label}</div>
                   <div
                     className="h-1 bg-primary rounded-full"
@@ -958,7 +1292,7 @@ export default function SiteMap() {
                 </div>
 
                 {/* Zoom Level Readout */}
-                <div className="bg-slate-900/90 border border-border/80 rounded px-2.5 py-1 text-[10px] font-mono shadow-md backdrop-blur-md text-muted-foreground">
+                <div className="bg-card/90 border border-border/80 rounded px-2.5 py-1 text-[10px] font-mono shadow-md backdrop-blur-md text-muted-foreground">
                   ZOOM: <strong className="text-foreground">{zoom.toFixed(1)}x</strong>
                 </div>
               </div>
@@ -979,6 +1313,10 @@ export default function SiteMap() {
                     <span className="text-[11px] text-muted-foreground uppercase">{st}</span>
                   </div>
                 ))}
+                <div className="flex items-center gap-1.5 pl-2 border-l border-border/80">
+                  <Flame size={12} className="text-rose-500 animate-pulse" />
+                  <span className="text-[11px] text-rose-400 font-bold">ROAD HAZARDS ({hazardPins.length})</span>
+                </div>
               </div>
 
               <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
@@ -1020,6 +1358,110 @@ export default function SiteMap() {
 
               {selectedProject ? (
                 <div className="p-4 space-y-4 flex-1 overflow-y-auto font-sans text-xs">
+                  {/* Selected Hazard Spotlight Card */}
+                  {selectedHazard && (
+                    <div className="p-3.5 rounded-xl bg-rose-500/10 dark:bg-gradient-to-br dark:from-rose-950/40 dark:to-slate-900 border-2 border-rose-500/70 space-y-3 shadow-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Flame className="w-4 h-4 text-rose-500 dark:text-rose-400 animate-pulse" />
+                          <span className="font-mono text-xs font-bold text-rose-600 dark:text-rose-300">
+                            ROAD DEFECT HAZARD SPOTLIGHT
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setSelectedHazardId(null)}
+                          className="text-muted-foreground hover:text-foreground text-[10px] underline cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      </div>
+
+                      <div>
+                        <h4 className="font-semibold text-foreground text-xs">{selectedHazard.title}</h4>
+                        <div className="flex items-center gap-2 mt-1 font-mono text-[10px] text-muted-foreground">
+                          <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
+                            SEVERITY: {selectedHazard.severity_score.toFixed(1)}/100
+                          </span>
+                          <span>{selectedHazard.chainage}</span>
+                        </div>
+                      </div>
+
+                      {/* Directive & Metric grid */}
+                      <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                        <div className="p-2 rounded bg-card/80 border border-border">
+                          <span className="text-muted-foreground block">POTHOLES / CRACKS</span>
+                          <span className="font-bold text-foreground">
+                            {selectedHazard.potholes_count} holes · {selectedHazard.cracks_count} cracks
+                          </span>
+                        </div>
+                        <div className="p-2 rounded bg-card/80 border border-border">
+                          <span className="text-muted-foreground block">EST. REPAIR</span>
+                          <span className="font-bold text-rose-400">
+                            {formatCurrency(selectedHazard.repair_cost_inr)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded bg-rose-950/30 border border-rose-500/30 text-[10px] text-slate-300 space-y-1">
+                        <span className="font-bold text-rose-300 flex items-center gap-1">
+                          MoRTH Statutory Directive:
+                        </span>
+                        <p>{selectedHazard.directive}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          onClick={() => navigate("/engineering")}
+                          className="flex-1 py-1.5 px-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] flex items-center justify-center gap-1.5 shadow transition cursor-pointer"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Issue PWD Notice</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setCenterLat(selectedHazard.latitude);
+                            setCenterLng(selectedHazard.longitude);
+                            setZoom(15.5);
+                          }}
+                          className="py-1.5 px-2.5 rounded-lg bg-muted hover:bg-accent border border-border text-foreground font-semibold text-[11px] flex items-center gap-1 transition cursor-pointer"
+                          title="Zoom to hazard coordinates"
+                        >
+                          <Crosshair className="w-3.5 h-3.5 text-primary" />
+                          <span>Focus</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Linked Project Hazards Pill */}
+                  {projectHazards.length > 0 && !selectedHazard && (
+                    <div className="p-2.5 rounded-lg bg-rose-950/20 border border-rose-500/40 text-xs space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[10px] text-rose-300 font-bold flex items-center gap-1.5">
+                          <Flame className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                          {projectHazards.length} Road Cavity Hazard(s) On Corridor:
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {projectHazards.map((hz) => (
+                          <button
+                            key={hz.id}
+                            onClick={() => {
+                              setSelectedHazardId(hz.id);
+                              setCenterLat(hz.latitude);
+                              setCenterLng(hz.longitude);
+                              setZoom(15.5);
+                            }}
+                            className="w-full text-left p-1.5 rounded bg-card/60 hover:bg-rose-500/10 border border-border text-[11px] flex items-center justify-between transition cursor-pointer"
+                          >
+                            <span className="font-mono text-foreground font-semibold truncate">{hz.id} · {hz.chainage}</span>
+                            <span className="font-mono text-rose-400 font-bold shrink-0">{hz.severity_score.toFixed(0)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Status Banner */}
                   <div
                     className="p-3 rounded-lg border flex items-center justify-between"
@@ -1066,7 +1508,7 @@ export default function SiteMap() {
                   </div>
 
                   {/* 500m Geofence Telemetry Card */}
-                  <div className="p-3 bg-slate-900/60 border border-border/80 rounded-lg space-y-2">
+                  <div className="p-3 bg-muted/40 border border-border/80 rounded-lg space-y-2">
                     <div className="flex items-center justify-between text-[11px] font-mono">
                       <span className="flex items-center gap-1.5 text-primary font-medium">
                         <ShieldCheck size={13} />

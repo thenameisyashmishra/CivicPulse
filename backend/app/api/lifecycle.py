@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_db, get_current_user, require_role
+from app.core.deps import get_db, get_current_user, get_current_user_optional, require_role
 from app.db.models import User, UserRole
 from app.services.project_lifecycle_service import ProjectLifecycleService
 
@@ -142,11 +142,18 @@ def create_or_get_scheme(
     )
 
 @router.get("/schemes")
-def list_schemes(db: Session = Depends(get_db)):
+def list_schemes(
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     return ProjectLifecycleService.get_schemes_rollup(db)
 
 @router.get("/gantt/{project_id}")
-def get_gantt_milestones(project_id: str, db: Session = Depends(get_db)):
+def get_gantt_milestones(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     return ProjectLifecycleService.get_project_milestones_gantt(db, project_id)
 
 @router.post("/delay-cause")
@@ -160,11 +167,18 @@ def log_delay_cause(
     )
 
 @router.get("/delay-analytics")
-def get_delay_analytics(db: Session = Depends(get_db)):
+def get_delay_analytics(
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     return ProjectLifecycleService.get_statewide_delay_analytics(db)
 
 @router.post("/weather-check")
-def verify_weather_claim(req: WeatherCheckRequest, db: Session = Depends(get_db)):
+def verify_weather_claim(
+    req: WeatherCheckRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return ProjectLifecycleService.verify_weather_claim(
         db, req.project_id, req.claim_date, req.claimed_event, req.claimed_rainfall_mm, req.station_code or "IMD-DELHI-01"
     )
@@ -242,7 +256,11 @@ def generate_utilization_certificate(
     )
 
 @router.post("/dashboard-feed")
-def syndicate_dashboard_feed(req: DashboardFeedRequest, db: Session = Depends(get_db)):
+def syndicate_dashboard_feed(
+    req: DashboardFeedRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.engineer])),
+):
     return ProjectLifecycleService.syndicate_dashboard_feed(db, req.project_id, req.target_portal)
 
 @router.post("/material-provenance")

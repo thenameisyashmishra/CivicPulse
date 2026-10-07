@@ -1,0 +1,23 @@
+{
+  "name": "CivicPulse AI Field Auditor",
+  "short_name": "CivicPulse",
+  "description": "Enterprise AI Road Inspection, Pothole Detection & Public Works Accountability Platform",
+  "start_url": "/engineering",
+  "display": "standalone",
+  "background_color": "#030712",
+  "theme_color": "#06b6d4",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
